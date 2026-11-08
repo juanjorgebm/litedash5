@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -165,6 +167,16 @@ fun LiteDashTheme(dark: Boolean = true, scale: Float = 1f, accent: Color? = null
     )
 }
 
+/**
+ * Inter, incluida en la app: la fuente de algunas pantallas con Android 5 no trae las tildes ni el
+ * ° en negritas (salían cuadritos). Con acentos y símbolos de Latin, ya recortada.
+ */
+val Inter = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
+
 object Typography {
     // Más grandes que antes: se leen desde el asiento del conductor.
     val clock = TextStyle(fontSize = 64.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-1).sp)
@@ -185,7 +197,7 @@ fun Label(
     maxLines: Int = Int.MAX_VALUE,
     modifier: Modifier = Modifier,
 ) {
-    BasicText(text, modifier, style = style.copy(color = color), maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    BasicText(text, modifier, style = style.copy(color = color, fontFamily = style.fontFamily ?: Inter), maxLines = maxLines, overflow = TextOverflow.Ellipsis)
 }
 
 private val CardBrush = Brush.linearGradient(listOf(Slate, Color(0xFF272D36), Coal))
