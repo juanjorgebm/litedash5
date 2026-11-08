@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -420,6 +421,11 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
     // Clima al volver al inicio y cada media hora con el inicio a la vista (si está activado); nunca en segundo plano.
     WeatherRefresh(d.weather, revision)
     // Versión nueva de la app (a lo más cada 12 h, al volver al inicio) y modelo 3D nuevo del auto (cada hora).
+    val ctxBt = androidx.compose.ui.platform.LocalContext.current
+    DisposableEffect(d.prefs.keepBluetooth) {
+        val stop = if (d.prefs.keepBluetooth) CarBluetoothKeeper.watch(ctxBt) { CarBluetoothKeeper.ensure(ctxBt) } else ({})
+        onDispose { stop() }
+    }
     LaunchedEffect(revision) { d.updater.checkQuietly() }
     LaunchedEffect(d.prefs.carModel) { d.cars.checkQuietly(d.prefs.carModel) }
     // Cuántas pantallas usan LiteDash: a lo más una vez al día.

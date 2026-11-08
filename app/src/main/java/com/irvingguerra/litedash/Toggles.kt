@@ -99,6 +99,7 @@ fun BluetoothToggleTile() {
     }
     ToggleTile(Icons.bluetooth, stringResource(R.string.tile_bluetooth), on == true || car.phone, state) {
         val target = on != true
+        if (target && car.on != null) { CarBluetoothKeeper.ensure(context); return@ToggleTile }
         @Suppress("DEPRECATION") // enable()/disable(): desde Android 13 ya no se dejan usar
         val done = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && adapter != null && car.on == null &&
             runCatching { if (target) adapter.enable() else adapter.disable() }.getOrDefault(false)

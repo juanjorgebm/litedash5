@@ -70,6 +70,7 @@ internal object PrefKeys {
     const val STATS = "anonymous_stats"
     const val HIDE_STATUS_BAR = "hide_status_bar"
     const val INTERNET_RADIO = "internet_radio"
+    const val KEEP_BLUETOOTH = "keep_bluetooth"
     const val TIRES_ON_CAR = "tires_on_car"
     const val TIRES_BANNER = "tires_banner"
     const val CAR_TAP = "car_tap"
@@ -292,6 +293,9 @@ class Preferences(context: Context) {
 
     /** Radio por internet con las estaciones de cerca (apagada de fábrica). */
     var internetRadio by bool(PrefKeys.INTERNET_RADIO, false)
+
+    /** Mantener activo el Bluetooth de la pantalla del carro y que reconecte el celular al encender. */
+    var keepBluetooth by bool(PrefKeys.KEEP_BLUETOOTH, false)
 
     /** Guardar un resumen de cada viaje con el OBD conectado (apagado de fábrica). */
     var tripLog by bool(PrefKeys.TRIP_LOG, false)

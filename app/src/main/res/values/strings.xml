@@ -545,6 +545,10 @@
     <string name="bluetooth_off">El Bluetooth de la pantalla está apagado.</string>
     <string name="bluetooth_turn_on">Encender Bluetooth</string>
     <!-- Vincular el celular (Ajustes → Apps → Música). -->
+    <string name="bt_keep">Mantener Bluetooth activo</string>
+    <string name="bt_keep_help">Enciende el Bluetooth de la pantalla y busca tu celular solo cada vez que enciendes el carro.</string>
+    <string name="bt_keep_now">Activar y reconectar ahora</string>
+    <string name="bt_keep_result">Resultado: %1$s</string>
     <string name="bt_pair">Vincular celular (Bluetooth)</string>
     <string name="bt_pair_help">Empareja tu celular con esta pantalla y, si ya no lo quieres, olvídalo. La música se controla desde la música en grande, sin abrir ninguna app.</string>
     <string name="bt_builtin_note">Tu pantalla usa el Bluetooth de Android: no hace falta enlazar ninguna app.</string>

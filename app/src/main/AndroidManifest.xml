@@ -4,6 +4,7 @@
 
     <!-- Apps a la vista sin el permiso restringido QUERY_ALL_PACKAGES (el cajón declara las suyas). -->
     <queries>
+        <package android:name="com.nforetek.bt" />
         <!-- Botón de voz: el asistente que tenga la pantalla. -->
         <intent>
             <action android:name="android.intent.action.VOICE_COMMAND" />

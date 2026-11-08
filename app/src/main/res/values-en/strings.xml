@@ -525,6 +525,10 @@
     <string name="obd_usb_found">USB cable</string>
     <string name="bluetooth_off">The head unit\'s Bluetooth is off.</string>
     <string name="bluetooth_turn_on">Turn on Bluetooth</string>
+    <string name="bt_keep">Keep Bluetooth on</string>
+    <string name="bt_keep_help">Turns the head unit Bluetooth on and reconnects your phone every time the car starts.</string>
+    <string name="bt_keep_now">Turn on and reconnect now</string>
+    <string name="bt_keep_result">Result: %1$s</string>
     <string name="bt_pair">Pair phone (Bluetooth)</string>
     <string name="bt_pair_help">Pair your phone with this head unit, or forget it when you no longer want it. Music is controlled from the big music widget, without opening any app.</string>
     <string name="bt_builtin_note">Your head unit uses Android\'s Bluetooth: no app to link.</string>
