@@ -442,6 +442,12 @@
     <string name="tile_music_help">Lo que suena, con controles; un toque la abre en grande</string>
     <string name="tile_clock_help">Hora, fecha y clima</string>
     <string name="tile_phone_help">Abre el marcador</string>
+    <string name="tile_wifi">Wi‑Fi</string>
+    <string name="tile_wifi_help">Enciende y apaga el Wi‑Fi con un toque</string>
+    <string name="tile_bluetooth">Bluetooth</string>
+    <string name="tile_bluetooth_help">Enciende y apaga el Bluetooth con un toque</string>
+    <string name="toggle_on">Encendido</string>
+    <string name="toggle_off">Apagado</string>
     <string name="logo_intro_help">Al abrir LiteDash, tu imagen (como el logo de tu marca) aparece unos segundos. Es aparte de los widgets de imagen.</string>
     <string name="intro_no_image">Sin imagen se muestra el logo de LiteDash.</string>
     <string name="unit_rpm" translatable="false">rpm</string>

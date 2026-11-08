@@ -434,6 +434,12 @@
     <string name="tile_music_help">What\'s playing, with controls; tap to open it big</string>
     <string name="tile_clock_help">Time, date and weather</string>
     <string name="tile_phone_help">Opens the dialer</string>
+    <string name="tile_wifi">Wi‑Fi</string>
+    <string name="tile_wifi_help">Turns Wi‑Fi on and off with one tap</string>
+    <string name="tile_bluetooth">Bluetooth</string>
+    <string name="tile_bluetooth_help">Turns Bluetooth on and off with one tap</string>
+    <string name="toggle_on">On</string>
+    <string name="toggle_off">Off</string>
     <string name="logo_intro_help">When LiteDash opens, your image (like your brand\'s logo) shows for a few seconds. It\'s separate from the image widgets.</string>
     <string name="intro_no_image">Without an image, the LiteDash logo shows.</string>
     <string name="unit_kml">km/L</string>

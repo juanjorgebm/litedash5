@@ -126,6 +126,10 @@ object TileTypes {
     /** Presión de las cuatro llantas (módulo de llantas). */
     const val TIRES = "tires"
     const val APP = "app"
+    /** Enciende y apaga el Wi‑Fi. */
+    const val WIFI = "wifi"
+    /** Enciende y apaga el Bluetooth. */
+    const val BLUETOOTH = "bluetooth"
 }
 
 /** Sin fondo de tarjeta siempre: el auto, la carretera y la imagen flotan sobre el inicio. */

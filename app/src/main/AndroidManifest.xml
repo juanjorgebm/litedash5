@@ -17,6 +17,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Ícono de Wi-Fi o datos en la barra (permiso normal, sin pregunta). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Widget Wi‑Fi: ver si está encendido y encenderlo o apagarlo (hasta Android 9). -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <!-- Clima y tema por el sol: solo la ubicación aproximada, y solo si lo activas. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Viaje (velocímetro): GPS, solo si agregas la pieza y mientras se ve. -->

@@ -287,6 +287,8 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
         TileTypes.PHONE -> ShortcutTile(Icons.phone, stringResource(R.string.tile_phone), null) {
             openDialer(context)
         }
+        TileTypes.WIFI -> WifiToggleTile()
+        TileTypes.BLUETOOTH -> BluetoothToggleTile()
         TileTypes.APP -> {
             val app = d.apps.find(apps, p.data)
             AppTile(d.apps, app) {
