@@ -82,9 +82,10 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
             });
             FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.BOTTOM | Gravity.START);
-            lp.leftMargin = 24;
-            lp.bottomMargin = 24;
+                    Gravity.TOP | Gravity.END);
+            // Arriba a la derecha: la barra de clima del carro tapa la parte de abajo de la pantalla.
+            lp.rightMargin = 24;
+            lp.topMargin = 110;
             root.addView(recordButton, lp);
         }
         setContentView(root);
