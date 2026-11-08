@@ -94,7 +94,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("Diagnóstico de cámaras · Okavango · v1.7");
+        title.setText("Diagnóstico de cámaras · Okavango · v1.8");
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         root.addView(title);
@@ -357,6 +357,9 @@ public class MainActivity extends Activity {
         buttonsRow.removeAllViews();
         addButton("Repetir", new View.OnClickListener() {
             public void onClick(View v) { reportView.setText("Analizando…"); runDiagnostics(); }
+        });
+        addButton("Dashcam segura", new View.OnClickListener() {
+            public void onClick(View v) { startActivity(new Intent(MainActivity.this, SafeCamActivity.class)); }
         });
         addButton("Monitor de reversa", new View.OnClickListener() {
             public void onClick(View v) { startActivity(new Intent(MainActivity.this, ReverseWatchActivity.class)); }
