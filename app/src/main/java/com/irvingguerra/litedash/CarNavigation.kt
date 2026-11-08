@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.irvingguerra.litedash.core.ui.Card
 import com.irvingguerra.litedash.core.ui.Icon
 import com.irvingguerra.litedash.core.ui.Icons
@@ -90,7 +91,7 @@ fun CarNavTile(onOpen: () -> Unit) {
                 }
             }
         }
-        val ok = runCatching { context.applicationContext.registerReceiver(receiver, IntentFilter(ACTION_NAV)) }.isSuccess
+        val ok = runCatching { ContextCompat.registerReceiver(context.applicationContext, receiver, IntentFilter(ACTION_NAV), ContextCompat.RECEIVER_EXPORTED) }.isSuccess
         onDispose { if (ok) runCatching { context.applicationContext.unregisterReceiver(receiver) } }
     }
     val now = info
