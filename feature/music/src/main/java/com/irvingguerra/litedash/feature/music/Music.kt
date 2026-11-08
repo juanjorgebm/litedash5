@@ -1394,6 +1394,31 @@ class MusicRepository(private val context: Context) {
     }
 
     /**
+     * Pistas dentro de la app [pkg] (se lee su APK, que Android deja leer): textos de su manifiesto y de su
+     * código que parecen acciones de música ("...ACTION.NEXT", "com.neusoft...play"). Es lento: fuera del hilo principal.
+     */
+    fun apkHints(pkg: String = preferred ?: CAR_MUSIC_APP): String = runCatching {
+        val path = context.packageManager.getApplicationInfo(pkg, 0).sourceDir
+        val found = java.util.TreeSet<String>()
+        val interesting = Regex("(?i)(neusoft|shockwave|mutimedia|mengjia|action|broadcast|media_button|android\\.intent)[\\w.$:/-]{3,}")
+        val keywords = Regex("(?i)(play|pause|next|prev|music|media|source|usb|song|track|key|audio)")
+        java.util.zip.ZipFile(path).use { zip ->
+            for (name in listOf("AndroidManifest.xml", "classes.dex", "classes2.dex")) {
+                val entry = zip.getEntry(name) ?: continue
+                var bytes = zip.getInputStream(entry).use { it.readBytes() }
+                // El manifiesto guarda los textos en UTF-16: se quitan los ceros para leerlos como ASCII.
+                if (name.endsWith(".xml")) bytes = bytes.filter { it != 0.toByte() }.toByteArray()
+                val text = String(bytes, Charsets.ISO_8859_1)
+                for (m in interesting.findAll(text)) {
+                    val v = m.value
+                    if (v.length in 8..90 && keywords.containsMatchIn(v) && !v.startsWith("androidx") && !v.contains("Landroid")) found += v
+                }
+            }
+        }
+        if (found.isEmpty()) "Sin pistas en $pkg" else "Pistas en $pkg (${found.size}):\n" + found.take(70).joinToString("\n") { "  $it" }
+    }.getOrElse { "No se pudo leer la app: ${it.javaClass.simpleName}" }
+
+    /**
      * Para ver en pantalla (Ajustes → Música → Diagnóstico): lo mismo que [describe] y los servicios y
      * receptores de la app de música elegida, para saber por dónde se le puede hablar.
      */

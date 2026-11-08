@@ -18,6 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,8 +68,19 @@ fun MusicSettings(d: Dependencies) {
     Label(stringResource(R.string.music_help), Typography.small, LocalColors.current.textMuted)
     // Diagnóstico en pantalla: qué ve LiteDash de la app de música (para arreglar controles que no responden).
     var diagnostic by remember { mutableStateOf<String?>(null) }
-    Button("Diagnóstico de música", { diagnostic = if (diagnostic == null) d.music.diagnostic() else null }, primary = diagnostic != null)
+    var hints by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button("Diagnóstico de música", { diagnostic = if (diagnostic == null) d.music.diagnostic() else null }, primary = diagnostic != null)
+        Button("Investigar app del carro", {
+            if (hints != null) hints = null else {
+                hints = "Leyendo la app…"
+                scope.launch { hints = withContext(Dispatchers.IO) { d.music.apkHints() } }
+            }
+        }, primary = hints != null)
+    }
     diagnostic?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
+    hints?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
 }
 
 /**
