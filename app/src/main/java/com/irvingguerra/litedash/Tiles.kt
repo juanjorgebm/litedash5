@@ -386,9 +386,22 @@ internal fun Turn(instruction: TurnInstruction, large: Boolean) {
     }
 }
 
+/** Teléfono Bluetooth de fábrica de la pantalla del Okavango (ECARX): el marcador de Android no existe ahí. */
+private const val CAR_PHONE_APP = "bt.ecarxtestn.com.btphoneapp"
+
 fun openDialer(context: Context) {
-    val intent = Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { context.startActivity(intent) }
+    val pm = context.packageManager
+    // Primero la app "Teléfono" del carro; si no, la que se llame así entre las apps del sistema; al final, el marcador.
+    val launch = pm.getLaunchIntentForPackage(CAR_PHONE_APP)
+        ?: runCatching {
+            pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                .firstOrNull { it.loadLabel(pm).toString().trim().lowercase() in setOf("teléfono", "telefono", "phone") && it.activityInfo.packageName != context.packageName }
+                ?.let { pm.getLaunchIntentForPackage(it.activityInfo.packageName) }
+        }.getOrNull()
+    val intent = (launch ?: Intent(Intent.ACTION_DIAL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }.onFailure {
+        runCatching { context.startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
 }
 
 /** Navegación directa a [address]: Waze o Maps si son la app elegida; si no, la que atienda "geo:". */
