@@ -196,7 +196,7 @@ class Preferences(context: Context) {
     /** null = todavía no lo nombra (se muestra "Mi auto"). */
     var carName by string(PrefKeys.CAR_NAME)
 
-    private var _carColor by mutableIntStateOf(p.getInt(PrefKeys.CAR_COLOR, CarColors[1].toArgb()) // blanco, como el Okavango)
+    private var _carColor by mutableIntStateOf(p.getInt(PrefKeys.CAR_COLOR, CarColors[1].toArgb())) // blanco, como el Okavango
     var carColor: Color
         get() = Color(_carColor)
         set(v) { _carColor = v.toArgb(); p.edit { putInt(PrefKeys.CAR_COLOR, _carColor) } }
