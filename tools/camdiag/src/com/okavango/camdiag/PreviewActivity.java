@@ -166,50 +166,64 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
             return;
         }
         int camId = Integer.parseInt(id);
-        String how;
-        try {
-            File usb = new File("/storage/usbotg/usbotg-sda2");
-            File dir = usb.canWrite() ? new File(usb, "Dashcam") : new File(Environment.getExternalStorageDirectory(), "DCIM");
+        String how = null;
+        File usb = new File("/storage/usbotg/usbotg-sda2");
+        File[] dirs = usb.canWrite()
+                ? new File[]{new File(usb, "Dashcam"), new File(Environment.getExternalStorageDirectory(), "DCIM")}
+                : new File[]{new File(Environment.getExternalStorageDirectory(), "DCIM")};
+        int[] qualities = {CamcorderProfile.QUALITY_720P, CamcorderProfile.QUALITY_HIGH, -1};
+        StringBuilder errors = new StringBuilder();
+        String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+        outer:
+        for (File dir : dirs) {
             dir.mkdirs();
-            String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-            recordFile = new File(dir, "prueba_camara" + id + "_" + stamp + ".mp4");
-            Camera.Size s = camera1.getParameters().getPreviewSize();
-            camera1.unlock();
-            recorder = new MediaRecorder();
-            recorder.setCamera(camera1);
-            recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
-            if (getIntent().getStringExtra(EXTRA_SIZE) != null) {
-                // Mismo tamaño que la vista previa elegida, a un bitrate de dashcam.
-                recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-                recorder.setVideoFrameRate(30);
-                recorder.setVideoSize(s.width, s.height);
-                recorder.setVideoEncodingBitRate(6000000);
-                recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-                how = "manual " + s.width + "x" + s.height + " 30 fps 6 Mbps";
-            } else if (CamcorderProfile.hasProfile(camId, CamcorderProfile.QUALITY_HIGH)) {
-                CamcorderProfile prof = CamcorderProfile.get(camId, CamcorderProfile.QUALITY_HIGH);
-                recorder.setOutputFormat(prof.fileFormat);
-                recorder.setVideoFrameRate(prof.videoFrameRate);
-                recorder.setVideoSize(prof.videoFrameWidth, prof.videoFrameHeight);
-                recorder.setVideoEncodingBitRate(prof.videoBitRate);
-                recorder.setVideoEncoder(prof.videoCodec);
-                how = "perfil " + prof.videoFrameWidth + "x" + prof.videoFrameHeight + " " + prof.videoFrameRate + " fps";
-            } else {
-                recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-                recorder.setVideoFrameRate(25);
-                recorder.setVideoSize(s.width, s.height);
-                recorder.setVideoEncodingBitRate(4000000);
-                recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-                how = "manual " + s.width + "x" + s.height + " 25 fps";
+            for (int q : qualities) {
+                recordFile = new File(dir, "prueba_camara" + id + "_" + stamp + ".mp4");
+                String desc;
+                try {
+                    camera1.unlock();
+                    recorder = new MediaRecorder();
+                    recorder.setCamera(camera1);
+                    recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+                    if (q >= 0) {
+                        if (!CamcorderProfile.hasProfile(camId, q)) throw new RuntimeException("sin perfil " + q);
+                        CamcorderProfile prof = CamcorderProfile.get(camId, q);
+                        recorder.setOutputFormat(prof.fileFormat);
+                        recorder.setVideoFrameRate(prof.videoFrameRate);
+                        recorder.setVideoSize(prof.videoFrameWidth, prof.videoFrameHeight);
+                        recorder.setVideoEncodingBitRate(Math.min(prof.videoBitRate, 8000000));
+                        recorder.setVideoEncoder(prof.videoCodec);
+                        desc = "perfil " + prof.videoFrameWidth + "x" + prof.videoFrameHeight + " " + prof.videoFrameRate + " fps";
+                    } else {
+                        recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+                        recorder.setVideoFrameRate(30);
+                        recorder.setVideoSize(1280, 720);
+                        recorder.setVideoEncodingBitRate(4000000);
+                        recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+                        desc = "manual 1280x720 30 fps";
+                    }
+                    recorder.setOutputFile(recordFile.getAbsolutePath());
+                    recorder.prepare();
+                    recorder.start();
+                    how = desc + " en " + (dir.getPath().contains("usbotg") ? "USB" : "memoria interna");
+                    break outer;
+                } catch (Throwable t) {
+                    errors.append("\n✘ ").append(dir.getPath().contains("usbotg") ? "USB" : "interna")
+                            .append(" calidad ").append(q).append(": ").append(t.getMessage());
+                    try { if (recorder != null) recorder.release(); } catch (Throwable ignored) { }
+                    recorder = null;
+                    recordFile.delete();
+                    try { camera1.reconnect(); } catch (Throwable e) { try { camera1.lock(); } catch (Throwable ignored) { } }
+                    try { camera1.startPreview(); } catch (Throwable ignored) { }
+                }
             }
-            recorder.setOutputFile(recordFile.getAbsolutePath());
-            recorder.prepare();
-            recorder.start();
-        } catch (Throwable t) {
-            setStatus("✘ no se pudo grabar: " + t);
-            stopRecording(false);
+        }
+        if (how == null) {
+            setStatus("✘ no se pudo grabar con ninguna opción:" + errors);
+            runOnUiThread(new Runnable() { public void run() { if (recordButton != null) recordButton.setEnabled(true); } });
             return;
         }
+        if (errors.length() > 0) how += " (falló antes:" + errors.toString().replace("\n", " ") + ")";
         final String mode = how;
         StringBuilder speedLog = new StringBuilder("segundo,velocidad_kmh,gps_fix\n");
         for (int i = 180; i > 0; i--) {
