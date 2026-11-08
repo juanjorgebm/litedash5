@@ -94,7 +94,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("Diagnóstico de cámaras · Okavango · v2.0");
+        title.setText("Diagnóstico de cámaras · Okavango · v2.1");
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         root.addView(title);

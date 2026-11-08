@@ -48,6 +48,14 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
     private MediaRecorder recorder;
     private File recordFile;
     private Button recordButton;
+    private volatile float lastSpeedKmh = -1;
+    private android.location.LocationManager locationManager;
+    private final android.location.LocationListener locationListener = new android.location.LocationListener() {
+        public void onLocationChanged(android.location.Location l) { lastSpeedKmh = l.hasSpeed() ? l.getSpeed() * 3.6f : 0; }
+        public void onStatusChanged(String p, int st, Bundle b) { }
+        public void onProviderEnabled(String p) { }
+        public void onProviderDisabled(String p) { lastSpeedKmh = -1; }
+    };
     private HandlerThread bg;
     private Handler bgHandler;
 
@@ -76,7 +84,7 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
                 Gravity.TOP | Gravity.START));
         if (!"camera2".equals(api)) {
             recordButton = new Button(this);
-            recordButton.setText("Grabar prueba de 20 s");
+            recordButton.setText("Grabar prueba de 3 min (manejando)");
             recordButton.setAllCaps(false);
             recordButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
             recordButton.setOnClickListener(new android.view.View.OnClickListener() {
@@ -95,6 +103,11 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
         }
         setContentView(root);
 
+        try {
+            locationManager = (android.location.LocationManager) getSystemService(LOCATION_SERVICE);
+            locationManager.requestLocationUpdates(android.location.LocationManager.GPS_PROVIDER, 1000, 0, locationListener);
+        } catch (Throwable ignored) { }
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         bg = new HandlerThread("cam");
         bg.start();
         bgHandler = new Handler(bg.getLooper());
@@ -155,7 +168,8 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
         int camId = Integer.parseInt(id);
         String how;
         try {
-            File dir = new File(Environment.getExternalStorageDirectory(), "DCIM");
+            File usb = new File("/storage/usbotg/usbotg-sda2");
+            File dir = usb.canWrite() ? new File(usb, "Dashcam") : new File(Environment.getExternalStorageDirectory(), "DCIM");
             dir.mkdirs();
             String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
             recordFile = new File(dir, "prueba_camara" + id + "_" + stamp + ".mp4");
@@ -197,11 +211,19 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
             return;
         }
         final String mode = how;
-        for (int i = 20; i > 0; i--) {
-            setStatus("● grabando (" + mode + ") · " + i + " s");
+        StringBuilder speedLog = new StringBuilder("segundo,velocidad_kmh,gps_fix\n");
+        for (int i = 180; i > 0; i--) {
+            String sp = lastSpeedKmh < 0 ? "sin GPS" : String.format(Locale.US, "%.0f km/h", lastSpeedKmh);
+            speedLog.append(180 - i).append(',').append(lastSpeedKmh).append(',').append(lastSpeedKmh >= 0).append('\n');
+            setStatus("● grabando (" + mode + ") · " + i + " s · " + sp);
             try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
             if (recorder == null) return;
         }
+        try {
+            java.io.FileOutputStream o = new java.io.FileOutputStream(new File(recordFile.getPath().replace(".mp4", "_velocidad.csv")));
+            o.write(speedLog.toString().getBytes("UTF-8"));
+            o.close();
+        } catch (Throwable ignored) { }
         stopRecording(true);
         setStatus("✔ video guardado: " + recordFile.getAbsolutePath() + " · " + (recordFile.length() / 1024) + " KB (" + mode + ")");
     }
@@ -314,6 +336,7 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        try { if (locationManager != null) locationManager.removeUpdates(locationListener); } catch (Throwable ignored) { }
         release();
         if (bg != null) bg.quitSafely();
     }
