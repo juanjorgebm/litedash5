@@ -64,6 +64,10 @@ fun MusicSettings(d: Dependencies) {
     }
     if (other) AppSearch(apps, chosen) { d.music.choose(it); other = false }
     Label(stringResource(R.string.music_help), Typography.small, LocalColors.current.textMuted)
+    // Diagnóstico en pantalla: qué ve LiteDash de la app de música (para arreglar controles que no responden).
+    var diagnostic by remember { mutableStateOf<String?>(null) }
+    Button("Diagnóstico de música", { diagnostic = if (diagnostic == null) d.music.diagnostic() else null }, primary = diagnostic != null)
+    diagnostic?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
 }
 
 /**

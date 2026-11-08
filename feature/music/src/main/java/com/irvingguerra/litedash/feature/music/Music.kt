@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -1376,6 +1377,22 @@ class MusicRepository(private val context: Context) {
         appendLine("Bluetooth de Android: AVRCP=${service?.let { "${it.packageName}/${it.name}" } ?: "no"}; adaptador=${adapter?.let { if (it.isEnabled) "encendido" else "apagado" } ?: "no"}")
         val brand = BRAND_BT_APPS.filter { runCatching { context.packageManager.getPackageInfo(it, 0) }.isSuccess }
         appendLine("Apps de Bluetooth de marca: ${brand.joinToString().ifBlank { "ninguna" }}")
+    }
+
+    /**
+     * Para ver en pantalla (Ajustes → Música → Diagnóstico): lo mismo que [describe] y los servicios y
+     * receptores de la app de música elegida, para saber por dónde se le puede hablar.
+     */
+    fun diagnostic(): String = buildString {
+        append(describe())
+        val pkg = preferred ?: CAR_MUSIC_APP
+        runCatching {
+            @Suppress("DEPRECATION")
+            val info = context.packageManager.getPackageInfo(pkg, PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS)
+            appendLine("Componentes de $pkg:")
+            info.services.orEmpty().forEach { appendLine("  servicio ${it.name.substringAfterLast('.')}${if (it.exported) " (público)" else ""}") }
+            info.receivers.orEmpty().forEach { appendLine("  receptor ${it.name.substringAfterLast('.')}${if (it.exported) " (público)" else ""}") }
+        }.onFailure { appendLine("Componentes de $pkg: no se pudieron leer") }
     }
 
     /**
