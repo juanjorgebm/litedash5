@@ -37,6 +37,8 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
     static final String EXTRA_SIZE = "size";
 
     private TextView status;
+    private TextureView textureView;
+    private FrameLayout rootLayout;
     private String api;
     private String id;
 
@@ -57,7 +59,9 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
+        rootLayout = root;
         TextureView tv = new TextureView(this);
+        textureView = tv;
         tv.setSurfaceTextureListener(this);
         root.addView(tv, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -134,6 +138,7 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
                 public void onError(int error, Camera c) { setStatus("error de cámara " + error); }
             });
             camera1.startPreview();
+            fitToAspect(s.width, s.height);
             setStatus("✔ vista previa activa " + s.width + "x" + s.height
                     + " (si la pantalla sigue negra, la cámara no envía imagen)");
         } catch (Throwable t) {
@@ -159,7 +164,15 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
             recorder = new MediaRecorder();
             recorder.setCamera(camera1);
             recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
-            if (CamcorderProfile.hasProfile(camId, CamcorderProfile.QUALITY_HIGH)) {
+            if (getIntent().getStringExtra(EXTRA_SIZE) != null) {
+                // Mismo tamaño que la vista previa elegida, a un bitrate de dashcam.
+                recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+                recorder.setVideoFrameRate(30);
+                recorder.setVideoSize(s.width, s.height);
+                recorder.setVideoEncodingBitRate(6000000);
+                recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+                how = "manual " + s.width + "x" + s.height + " 30 fps 6 Mbps";
+            } else if (CamcorderProfile.hasProfile(camId, CamcorderProfile.QUALITY_HIGH)) {
                 CamcorderProfile prof = CamcorderProfile.get(camId, CamcorderProfile.QUALITY_HIGH);
                 recorder.setOutputFormat(prof.fileFormat);
                 recorder.setVideoFrameRate(prof.videoFrameRate);
@@ -199,6 +212,20 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
         recorder = null;
         try { if (camera1 != null) camera1.lock(); } catch (Throwable ignored) { }
         runOnUiThread(new Runnable() { public void run() { if (recordButton != null) recordButton.setEnabled(true); } });
+    }
+
+    /** Muestra el cuadro completo de la cámara sin estirarlo (con bandas negras si hace falta). */
+    private void fitToAspect(final int w, final int h) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                int rw = rootLayout.getWidth(), rh = rootLayout.getHeight();
+                if (rw == 0 || rh == 0 || w == 0 || h == 0) return;
+                int vw = rw, vh = rw * h / w;
+                if (vh > rh) { vh = rh; vw = rh * w / h; }
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(vw, vh, Gravity.CENTER);
+                textureView.setLayoutParams(lp);
+            }
+        });
     }
 
     private void openCamera2(final SurfaceTexture st) {
