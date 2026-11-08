@@ -34,6 +34,7 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
 
     static final String EXTRA_API = "api";
     static final String EXTRA_ID = "id";
+    static final String EXTRA_SIZE = "size";
 
     private TextView status;
     private String api;
@@ -116,7 +117,18 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
         try {
             camera1 = Camera.open(Integer.parseInt(id));
             Camera.Parameters p = camera1.getParameters();
-            Camera.Size s = p.getPreviewSize();
+            String want = getIntent().getStringExtra(EXTRA_SIZE);
+            if (want != null) {
+                String[] wh = want.split("x");
+                p.setPreviewSize(Integer.parseInt(wh[0]), Integer.parseInt(wh[1]));
+                try {
+                    camera1.setParameters(p);
+                } catch (Throwable t) {
+                    setStatus("✘ no acepta " + want + ": " + t);
+                    p = camera1.getParameters();
+                }
+            }
+            Camera.Size s = camera1.getParameters().getPreviewSize();
             camera1.setPreviewTexture(st);
             camera1.setErrorCallback(new Camera.ErrorCallback() {
                 public void onError(int error, Camera c) { setStatus("error de cámara " + error); }

@@ -69,6 +69,14 @@ public class MainActivity extends Activity {
 
     private TextView reportView;
     private LinearLayout buttonsRow;
+    private LinearLayout appsRow;
+    /** Apps de cámara de fábrica que se abren directamente (paquete, actividad, nombre). */
+    private static final String[][] FACTORY_APPS = {
+            {"com.neusoft.cardvr", "com.neusoft.cardvr.view.MainActivity", "Driving record"},
+            {"com.neusoft.dvrlogin", "com.neusoft.dvrlogin.MainActivity", "DVR"},
+            {"com.neusoft.avm", "com.neusoft.avm.MainActivity", "Vista 360°"},
+    };
+    private final List<String[]> exportedActivities = new ArrayList<>();
     private final StringBuilder report = new StringBuilder();
     private final List<String> camera1Ids = new ArrayList<>();
     private final List<String> camera2Ids = new ArrayList<>();
@@ -86,7 +94,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("Diagnóstico de cámaras · Okavango · v1.2");
+        title.setText("Diagnóstico de cámaras · Okavango · v1.3");
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         root.addView(title);
@@ -98,6 +106,15 @@ public class MainActivity extends Activity {
         hs.addView(buttonsRow);
         root.addView(hs, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        HorizontalScrollView hs2 = new HorizontalScrollView(this);
+        appsRow = new LinearLayout(this);
+        appsRow.setOrientation(LinearLayout.HORIZONTAL);
+        appsRow.setGravity(Gravity.CENTER_VERTICAL);
+        hs2.addView(appsRow);
+        root.addView(hs2, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        buildAppButtons();
 
         ScrollView sv = new ScrollView(this);
         reportView = new TextView(this);
@@ -121,6 +138,7 @@ public class MainActivity extends Activity {
                 camera1Ids.clear();
                 camera2Ids.clear();
                 launchablePackages.clear();
+                exportedActivities.clear();
                 safe("Equipo", new Section() { public void run() throws Exception { deviceInfo(); } });
                 safe("Camera1 (API clásica)", new Section() { public void run() throws Exception { camera1(); } });
                 safe("Camera2", new Section() { public void run() throws Exception { camera2(); } });
@@ -267,6 +285,9 @@ public class MainActivity extends Activity {
             if (p.activities != null) {
                 for (ActivityInfo a : p.activities) {
                     line("     actividad: " + a.name + (a.exported ? " (exportada)" : ""));
+                    if (a.exported && !p.packageName.equals(getPackageName())) {
+                        exportedActivities.add(new String[]{p.packageName, a.name, label});
+                    }
                 }
             }
             if (p.services != null) {
@@ -339,35 +360,69 @@ public class MainActivity extends Activity {
         });
         for (final String id : camera1Ids) {
             addButton("Ver cámara " + id, new View.OnClickListener() {
-                public void onClick(View v) { openPreview("camera1", id); }
+                public void onClick(View v) { openPreview("camera1", id, null); }
+            });
+            addButton("Cámara " + id + " HD 1280x720", new View.OnClickListener() {
+                public void onClick(View v) { openPreview("camera1", id, "1280x720"); }
+            });
+            addButton("Cámara " + id + " 1920x720", new View.OnClickListener() {
+                public void onClick(View v) { openPreview("camera1", id, "1920x720"); }
             });
         }
         for (final String id : camera2Ids) {
             addButton("Camera2 " + id, new View.OnClickListener() {
-                public void onClick(View v) { openPreview("camera2", id); }
+                public void onClick(View v) { openPreview("camera2", id, null); }
             });
         }
-        for (final String pkg : launchablePackages) {
-            addButton("Abrir " + pkg, new View.OnClickListener() {
-                public void onClick(View v) {
-                    try {
-                        startActivity(getPackageManager().getLaunchIntentForPackage(pkg));
-                    } catch (Throwable t) {
-                        Toast.makeText(MainActivity.this, "No se pudo abrir: " + t, Toast.LENGTH_LONG).show();
-                    }
-                }
-            });
+        buildAppButtons();
+    }
+
+    /** Segunda fila: abrir las apps de cámara de fábrica por su actividad exacta. */
+    private void buildAppButtons() {
+        appsRow.removeAllViews();
+        List<String> seen = new ArrayList<>();
+        for (String[] a : FACTORY_APPS) {
+            addAppButton(a[0], a[1], "Abrir " + a[2]);
+            seen.add(a[0] + "/" + a[1]);
+        }
+        for (String[] a : exportedActivities) {
+            if (seen.contains(a[0] + "/" + a[1])) continue;
+            seen.add(a[0] + "/" + a[1]);
+            String shortName = a[1].substring(a[1].lastIndexOf('.') + 1);
+            addAppButton(a[0], a[1], "Abrir " + a[2] + " · " + shortName);
         }
     }
 
-    private void openPreview(String api, String id) {
+    private void addAppButton(final String pkg, final String activity, String text) {
+        Button b = makeButton(text, new View.OnClickListener() {
+            public void onClick(View v) {
+                try {
+                    Intent i = new Intent(Intent.ACTION_MAIN);
+                    i.setClassName(pkg, activity);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                } catch (Throwable t) {
+                    Toast.makeText(MainActivity.this, "No se pudo abrir " + pkg + ": " + t, Toast.LENGTH_LONG).show();
+                }
+            }
+        });
+        appsRow.addView(b, b.getLayoutParams());
+    }
+
+    private void openPreview(String api, String id, String size) {
         Intent i = new Intent(this, PreviewActivity.class);
+        if (size != null) i.putExtra(PreviewActivity.EXTRA_SIZE, size);
         i.putExtra(PreviewActivity.EXTRA_API, api);
         i.putExtra(PreviewActivity.EXTRA_ID, id);
         startActivity(i);
     }
 
     private void addButton(String text, View.OnClickListener l) {
+        Button b = makeButton(text, l);
+        buttonsRow.addView(b, b.getLayoutParams());
+    }
+
+    private Button makeButton(String text, View.OnClickListener l) {
         Button b = new Button(this);
         b.setText(text);
         b.setAllCaps(false);
@@ -376,7 +431,8 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(64));
         lp.rightMargin = dp(8);
-        buttonsRow.addView(b, lp);
+        b.setLayoutParams(lp);
+        return b;
     }
 
     // ---------------------------------------------------------------- utilidades
