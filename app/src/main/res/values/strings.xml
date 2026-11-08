@@ -778,4 +778,5 @@
     <string name="compass_e">E</string>
     <string name="compass_s">S</string>
     <string name="compass_w">O</string>
+    <string name="nav_need_notifications">Para ver los giros de Waze o Maps, toca aquí y da acceso a notificaciones a LiteDash</string>
 </resources>

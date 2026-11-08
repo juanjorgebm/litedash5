@@ -293,7 +293,7 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
         TileTypes.FAVORITES -> FavoritesTile()
         TileTypes.CAR_NAV -> {
             val navApp = mapApp(d, apps)
-            CarNavTile(onOpen = remember(navApp) { { actions.onNavigate(navApp) } })
+            CarNavTile(d, onOpen = remember(navApp) { { actions.onNavigate(navApp) } })
         }
         TileTypes.COMPASS -> CompassTile()
         TileTypes.WIDGET -> WidgetTile(p.data)

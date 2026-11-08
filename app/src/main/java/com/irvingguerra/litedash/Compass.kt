@@ -36,74 +36,66 @@ import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
 import com.irvingguerra.litedash.core.ui.Typography
 import kotlin.math.PI
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * Brújula. El rumbo sale del sensor magnético de la pantalla (vector de rotación, o magnetómetro con
- * acelerómetro) y, si la pantalla no lo trae, del rumbo (`CAR_DIRECTION`) que manda la navegación del carro.
- * La pantalla va parada: el rumbo es hacia donde mira su parte de atrás (X y Z del sensor).
+ * Brújula sin sensor magnético: el rumbo (`CAR_DIRECTION`) de la navegación del carro es la referencia del norte y el
+ * giroscopio (con el acelerómetro para saber cuál es "arriba") lo sigue entre avisos. Sin navegación activa no hay norte.
  */
 @Composable
 fun CompassTile() {
     val context = LocalContext.current
     val c = LocalColors.current
-    var sensorHeading by remember { mutableStateOf<Float?>(null) }
-    var navHeading by remember { mutableStateOf<Float?>(null) }
+    var heading by remember { mutableStateOf<Float?>(null) }
     DisposableEffect(Unit) {
         val app = context.applicationContext
         val sm = ContextCompat.getSystemService(app, SensorManager::class.java)
-        val rot = sm?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        val mag = sm?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
         val acc = sm?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val gravity = FloatArray(3)
-        val field = FloatArray(3)
-        var haveGravity = false
-        var haveField = false
-        // Suaviza en círculo (359° y 1° son vecinos): se promedian seno y coseno.
-        var sx = 0f
-        var sy = 0f
-        var started = false
-        fun publish(deg: Float) {
-            val r = (deg * PI / 180).toFloat()
-            if (!started) { sx = cos(r); sy = sin(r); started = true }
-            else { sx += 0.12f * (cos(r) - sx); sy += 0.12f * (sin(r) - sy) }
-            val out = (atan2(sy, sx) * 180 / PI).toFloat()
-            sensorHeading = (out + 360f) % 360f
-        }
-        fun fromMatrix(matrix: FloatArray) {
-            val remapped = FloatArray(9)
-            if (!SensorManager.remapCoordinateSystem(matrix, SensorManager.AXIS_X, SensorManager.AXIS_Z, remapped)) return
-            val o = FloatArray(3)
-            SensorManager.getOrientation(remapped, o)
-            publish((o[0] * 180 / PI).toFloat())
-        }
+        val gyro = sm?.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        // La pantalla no trae brújula magnética (solo acelerómetro y giroscopio), así que el norte lo da el rumbo de la
+        // navegación del carro (CAR_DIRECTION) y el giroscopio lo mantiene entre un aviso y otro: el eje de giro del carro es
+        // "hacia arriba", que se saca del acelerómetro (en reposo marca hacia arriba), sin importar cómo esté montada la pantalla.
+        val up = FloatArray(3)
+        var haveUp = false
+        var current: Float? = null
+        var lastNs = 0L
+        fun wrap(d: Float) = ((d % 360f) + 540f) % 360f - 180f
         val listener = object : SensorEventListener {
             override fun onSensorChanged(e: SensorEvent) {
                 when (e.sensor.type) {
-                    Sensor.TYPE_ROTATION_VECTOR -> {
-                        val m = FloatArray(9)
-                        SensorManager.getRotationMatrixFromVector(m, e.values)
-                        fromMatrix(m)
+                    Sensor.TYPE_ACCELEROMETER -> {
+                        val k = if (haveUp) 0.05f else 1f
+                        for (i in 0..2) up[i] += k * (e.values[i] - up[i])
+                        haveUp = true
                     }
-                    Sensor.TYPE_ACCELEROMETER -> { e.values.copyInto(gravity, endIndex = 3); haveGravity = true }
-                    Sensor.TYPE_MAGNETIC_FIELD -> { e.values.copyInto(field, endIndex = 3); haveField = true }
-                }
-                if (rot == null && haveGravity && haveField && e.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
-                    val m = FloatArray(9)
-                    if (SensorManager.getRotationMatrix(m, null, gravity, field)) fromMatrix(m)
+                    Sensor.TYPE_GYROSCOPE -> {
+                        val h = current
+                        val dt = if (lastNs == 0L) 0f else (e.timestamp - lastNs) / 1e9f
+                        lastNs = e.timestamp
+                        if (h == null || !haveUp || dt <= 0f || dt > 0.5f) return
+                        val norm = kotlin.math.sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2])
+                        if (norm < 1f) return
+                        val yawRate = (e.values[0] * up[0] + e.values[1] * up[1] + e.values[2] * up[2]) / norm // rad/s, antihorario +
+                        // Solo se cuenta si el giro es de verdad (más de ~1°/s): menos desvío estando detenido.
+                        if (kotlin.math.abs(yawRate) < 0.017f) return
+                        current = (h - yawRate * dt * 180f / PI.toFloat() + 360f) % 360f
+                        heading = current
+                    }
                 }
             }
             override fun onAccuracyChanged(s: Sensor?, a: Int) {}
         }
-        val sensors = if (rot != null) listOf(rot) else listOfNotNull(mag, acc).takeIf { mag != null && acc != null }.orEmpty()
-        sensors.forEach { runCatching { sm?.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) } }
+        listOfNotNull(acc, gyro).forEach { runCatching { sm?.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME) } }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, i: Intent) {
                 if (i.getIntExtra("KEY_TYPE", -1) == 10001 && i.hasExtra("CAR_DIRECTION")) {
-                    navHeading = i.getIntExtra("CAR_DIRECTION", 0).toFloat()
+                    val nav = i.getIntExtra("CAR_DIRECTION", 0).toFloat()
+                    val h = current
+                    // Primer aviso: se toma tal cual; después, se corrige un poco hacia él (el giroscopio se desvía con el tiempo).
+                    current = if (h == null) nav else (h + 0.3f * wrap(nav - h) + 360f) % 360f
+                    heading = current
                 }
             }
         }
@@ -113,7 +105,6 @@ fun CompassTile() {
             if (ok) runCatching { app.unregisterReceiver(receiver) }
         }
     }
-    val heading = sensorHeading ?: navHeading
     val names = listOf(R.string.compass_n, R.string.compass_e, R.string.compass_s, R.string.compass_w)
     Card(Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(14.dp), contentAlignment = Alignment.Center) {

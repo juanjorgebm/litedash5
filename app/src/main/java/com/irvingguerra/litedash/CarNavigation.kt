@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
 import com.irvingguerra.litedash.core.ui.Radius
 import com.irvingguerra.litedash.core.ui.Typography
+import com.irvingguerra.litedash.feature.music.NotificationService
 
 /**
  * Guía de la navegación del carro (Amap / `com.neusoft.ecarx.naviac`). Esa app manda por broadcast
@@ -66,7 +68,7 @@ private fun minutes(s: Int) = if (s >= 3600) "${s / 3600} h ${(s % 3600) / 60} m
 
 /** Pieza "Navegación del carro": nada que ver hasta que la navegación del carro arranque una ruta. */
 @Composable
-fun CarNavTile(onOpen: () -> Unit) {
+fun CarNavTile(d: Dependencies, onOpen: () -> Unit) {
     val context = LocalContext.current
     val c = LocalColors.current
     var info by remember { mutableStateOf<NavInfo?>(null) }
@@ -94,15 +96,28 @@ fun CarNavTile(onOpen: () -> Unit) {
         val ok = runCatching { ContextCompat.registerReceiver(context.applicationContext, receiver, IntentFilter(ACTION_NAV), ContextCompat.RECEIVER_EXPORTED) }.isSuccess
         onDispose { if (ok) runCatching { context.applicationContext.unregisterReceiver(receiver) } }
     }
+    // Sin ruta de la navegación del carro: la vuelta que dice la notificación de Waze o Google Maps (si se dio acceso a notificaciones).
+    val repo = d.navigation
+    DisposableEffect(repo) {
+        repo.use { NotificationService.active() }
+        onDispose { repo.release() }
+    }
     val now = info
+    val phoneTurn = repo.instruction
     Card(Modifier.fillMaxSize(), onClick = onOpen) {
-        if (now == null) {
+        if (now == null && phoneTurn != null) {
+            Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center) { Turn(phoneTurn, large = true) }
+        } else if (now == null) {
             Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center) {
                 Box(Modifier.size(52.dp).clip(RoundedCornerShape(Radius.card)).background(c.surfaceHigh), contentAlignment = Alignment.Center) {
                     Icon(Icons.navigate, c.accent, 26.dp)
                 }
                 Label(stringResource(R.string.nav_idle), Typography.title, maxLines = 1, modifier = Modifier.padding(top = 12.dp))
                 Label(stringResource(R.string.nav_idle_help), Typography.small, c.textMuted, maxLines = 2)
+                if (!d.music.hasPermission()) Label(
+                    stringResource(R.string.nav_need_notifications), Typography.small, c.accent, maxLines = 2,
+                    modifier = Modifier.padding(top = 6.dp).clickable { d.music.requestPermission() },
+                )
             }
         } else {
             Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.SpaceBetween) {

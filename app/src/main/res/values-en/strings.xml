@@ -757,4 +757,5 @@
     <string name="compass_e">E</string>
     <string name="compass_s">S</string>
     <string name="compass_w">W</string>
+    <string name="nav_need_notifications">For Waze or Maps turns, tap here and give LiteDash notification access</string>
 </resources>
