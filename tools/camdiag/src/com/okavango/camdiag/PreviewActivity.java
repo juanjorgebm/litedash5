@@ -16,8 +16,16 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.Surface;
 import android.view.TextureView;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.media.CamcorderProfile;
+import android.media.MediaRecorder;
+import android.os.Environment;
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 import java.util.Collections;
 
@@ -34,6 +42,9 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
     private Camera camera1;
     private CameraDevice camera2;
     private CameraCaptureSession session;
+    private MediaRecorder recorder;
+    private File recordFile;
+    private Button recordButton;
     private HandlerThread bg;
     private Handler bgHandler;
 
@@ -58,6 +69,24 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
         root.addView(status, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.START));
+        if (!"camera2".equals(api)) {
+            recordButton = new Button(this);
+            recordButton.setText("Grabar prueba de 20 s");
+            recordButton.setAllCaps(false);
+            recordButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+            recordButton.setOnClickListener(new android.view.View.OnClickListener() {
+                public void onClick(android.view.View v) {
+                    recordButton.setEnabled(false);
+                    bgHandler.post(new Runnable() { public void run() { startRecording(); } });
+                }
+            });
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM | Gravity.START);
+            lp.leftMargin = 24;
+            lp.bottomMargin = 24;
+            root.addView(recordButton, lp);
+        }
         setContentView(root);
 
         bg = new HandlerThread("cam");
@@ -97,6 +126,66 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
         } catch (Throwable t) {
             setStatus("✘ " + t);
         }
+    }
+
+    /** Graba 20 s del video de la cámara (sin audio) en /sdcard/DCIM para comprobar que sirve de dashcam. */
+    private void startRecording() {
+        if (camera1 == null) {
+            setStatus("✘ la cámara no está abierta");
+            return;
+        }
+        int camId = Integer.parseInt(id);
+        String how;
+        try {
+            File dir = new File(Environment.getExternalStorageDirectory(), "DCIM");
+            dir.mkdirs();
+            String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+            recordFile = new File(dir, "prueba_camara" + id + "_" + stamp + ".mp4");
+            Camera.Size s = camera1.getParameters().getPreviewSize();
+            camera1.unlock();
+            recorder = new MediaRecorder();
+            recorder.setCamera(camera1);
+            recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+            if (CamcorderProfile.hasProfile(camId, CamcorderProfile.QUALITY_HIGH)) {
+                CamcorderProfile prof = CamcorderProfile.get(camId, CamcorderProfile.QUALITY_HIGH);
+                recorder.setOutputFormat(prof.fileFormat);
+                recorder.setVideoFrameRate(prof.videoFrameRate);
+                recorder.setVideoSize(prof.videoFrameWidth, prof.videoFrameHeight);
+                recorder.setVideoEncodingBitRate(prof.videoBitRate);
+                recorder.setVideoEncoder(prof.videoCodec);
+                how = "perfil " + prof.videoFrameWidth + "x" + prof.videoFrameHeight + " " + prof.videoFrameRate + " fps";
+            } else {
+                recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+                recorder.setVideoFrameRate(25);
+                recorder.setVideoSize(s.width, s.height);
+                recorder.setVideoEncodingBitRate(4000000);
+                recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+                how = "manual " + s.width + "x" + s.height + " 25 fps";
+            }
+            recorder.setOutputFile(recordFile.getAbsolutePath());
+            recorder.prepare();
+            recorder.start();
+        } catch (Throwable t) {
+            setStatus("✘ no se pudo grabar: " + t);
+            stopRecording(false);
+            return;
+        }
+        final String mode = how;
+        for (int i = 20; i > 0; i--) {
+            setStatus("● grabando (" + mode + ") · " + i + " s");
+            try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
+            if (recorder == null) return;
+        }
+        stopRecording(true);
+        setStatus("✔ video guardado: " + recordFile.getAbsolutePath() + " · " + (recordFile.length() / 1024) + " KB (" + mode + ")");
+    }
+
+    private void stopRecording(boolean ok) {
+        try { if (recorder != null && ok) recorder.stop(); } catch (Throwable t) { setStatus("✘ al detener: " + t); }
+        try { if (recorder != null) recorder.release(); } catch (Throwable ignored) { }
+        recorder = null;
+        try { if (camera1 != null) camera1.lock(); } catch (Throwable ignored) { }
+        runOnUiThread(new Runnable() { public void run() { if (recordButton != null) recordButton.setEnabled(true); } });
     }
 
     private void openCamera2(final SurfaceTexture st) {
@@ -171,6 +260,9 @@ public class PreviewActivity extends Activity implements TextureView.SurfaceText
     }
 
     private void release() {
+        try { if (recorder != null) { recorder.stop(); } } catch (Throwable ignored) { }
+        try { if (recorder != null) { recorder.release(); } } catch (Throwable ignored) { }
+        recorder = null;
         try { if (camera1 != null) { camera1.stopPreview(); camera1.release(); } } catch (Throwable ignored) { }
         camera1 = null;
         try { if (session != null) session.close(); } catch (Throwable ignored) { }

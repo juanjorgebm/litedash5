@@ -18,11 +18,12 @@ javac -nowarn -encoding UTF-8 -source 8 -target 8 -cp "$PLATFORM/android.jar" -d
 cp build/base.apk build/unsigned.apk
 (cd build/dex && zip -q ../unsigned.apk classes.dex)
 "$BT/zipalign" -f 4 build/unsigned.apk build/aligned.apk
-if [ ! -f build/debug.keystore ]; then
-  keytool -genkeypair -keystore build/debug.keystore -storepass android -keypass android \
+# Llave de prueba fija (no secreta) para que las versiones nuevas se instalen encima de las anteriores.
+if [ ! -f debug.keystore ]; then
+  keytool -genkeypair -keystore debug.keystore -storepass android -keypass android \
     -alias diag -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Diagnostico Camaras" >/dev/null 2>&1
 fi
-"$BT/apksigner" sign --ks build/debug.keystore --ks-pass pass:android --key-pass pass:android \
+"$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android \
   --min-sdk-version 21 --out build/diagnostico-camaras.apk build/aligned.apk
 "$BT/apksigner" verify --verbose build/diagnostico-camaras.apk | head -5
 ls -la build/diagnostico-camaras.apk
