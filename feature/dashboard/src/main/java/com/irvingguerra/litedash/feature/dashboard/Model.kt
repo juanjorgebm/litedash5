@@ -134,6 +134,8 @@ object TileTypes {
     const val FAVORITES = "favorites"
     /** Un widget de otra app de Android (p. ej. Musixmatch); [Tile.data] es su appWidgetId. */
     const val WIDGET = "widget"
+    /** La guía de la navegación del carro (calle, giro, distancias, límite); viene por broadcast de Amap. */
+    const val CAR_NAV = "car_nav"
 }
 
 /** Sin fondo de tarjeta siempre: el auto, la carretera y la imagen flotan sobre el inicio. */
@@ -191,10 +193,12 @@ enum class Template(val sizes: Set<ScreenSize>) {
     VERTICAL_MAP(setOf(ScreenSize.VERTICAL)),
     /** Diseño del Okavango: el auto con el clima, los favoritos al lado y abajo la música, el Wi‑Fi y el Bluetooth. */
     OKAVANGO(setOf(ScreenSize.SMALL, ScreenSize.MEDIUM, ScreenSize.LARGE)),
+    /** Navegación del carro (giros) de un lado y la música del otro, sin auto. */
+    NAV_MUSIC(setOf(ScreenSize.SMALL, ScreenSize.MEDIUM, ScreenSize.LARGE)),
 }
 
 /** Las que no llevan auto (para quien no lo quiere ver en el inicio). */
-val Template.hasCar get() = this !in setOf(Template.SPEED, Template.MINIMAL, Template.SPEED_WIDGETS, Template.WALL_CARDS, Template.WALL_SIDE, Template.ROUTE)
+val Template.hasCar get() = this !in setOf(Template.SPEED, Template.MINIMAL, Template.SPEED_WIDGETS, Template.WALL_CARDS, Template.WALL_SIDE, Template.ROUTE, Template.NAV_MUSIC)
 
 /**
  * Acomodos de inicio. Se calculan para cualquier cuadrícula: lo que no quepa se
@@ -317,6 +321,13 @@ fun Template.tiles(c: Grid, hero: String = TileTypes.CAR, skip: (String) -> Bool
             val unit = if (rest >= 4) 2 else 1
             if (rest >= unit) place(TileTypes.WIFI, music, rows - strip, unit, strip)
             if (rest >= 2 * unit) place(TileTypes.BLUETOOTH, music + unit, rows - strip, unit, strip)
+        }
+        Template.NAV_MUSIC -> {
+            val music = maxOf(3, cols * 4 / 10).coerceAtMost(cols - 2)
+            place(TileTypes.CAR_NAV, 0, 0, cols - music, rows)
+            val musicRows = minOf(rows, 3)
+            place(TileTypes.MUSIC, cols - music, 0, music, musicRows)
+            if (rows > musicRows) place(TileTypes.CLOCK, cols - music, musicRows, music, rows - musicRows)
         }
         Template.SPEED -> {
             // Un poco más ancho que alto (el arco es así); en pantallas paradas, cuadrado al centro.

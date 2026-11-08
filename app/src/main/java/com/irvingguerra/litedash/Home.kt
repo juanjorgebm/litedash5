@@ -291,6 +291,10 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
             )
         }
         TileTypes.FAVORITES -> FavoritesTile()
+        TileTypes.CAR_NAV -> {
+            val navApp = mapApp(d, apps)
+            CarNavTile(onOpen = remember(navApp) { { actions.onNavigate(navApp) } })
+        }
         TileTypes.WIDGET -> WidgetTile(p.data)
         TileTypes.PHONE -> ShortcutTile(Icons.phone, stringResource(R.string.tile_phone), null) {
             openDialer(context)
