@@ -94,7 +94,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("Diagnóstico de cámaras · Okavango · v1.8");
+        title.setText("Diagnóstico de cámaras · Okavango · v1.9");
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         root.addView(title);
@@ -351,12 +351,68 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Busca memorias USB/SD montadas y prueba escribir en la raíz y en la carpeta propia de la app. */
+    private String usbTest() {
+        StringBuilder r = new StringBuilder("=== Prueba de USB ===\n");
+        List<File> candidates = new ArrayList<>();
+        for (String base : new String[]{"/storage/usbotg", "/storage", "/mnt/media_rw", "/mnt/usb_storage", "/mnt"}) {
+            File[] l = new File(base).listFiles();
+            if (l == null) { r.append(base).append(": no se puede listar\n"); continue; }
+            for (File f : l) {
+                String n = f.getName().toLowerCase(Locale.ROOT);
+                if (n.contains("usb") || n.contains("udisk") || n.contains("sda") || n.contains("ext") || n.contains("sdcard1")) {
+                    candidates.add(f);
+                    File[] sub = f.listFiles();
+                    if (sub != null) for (File s2 : sub) if (s2.isDirectory()) {
+                        String n2 = s2.getName().toLowerCase(Locale.ROOT);
+                        if (n2.contains("usb") || n2.contains("sda") || n2.contains("udisk")) candidates.add(s2);
+                    }
+                }
+            }
+        }
+        File[] own = getExternalFilesDirs(null);
+        r.append("Carpetas propias de la app: ").append(Arrays.toString(own)).append("\n\n");
+        for (File o : own) if (o != null) candidates.add(o);
+        String stamp = new SimpleDateFormat("HHmmss", Locale.US).format(new Date());
+        for (File c : candidates) {
+            r.append(c.getAbsolutePath()).append("\n   existe ").append(yes(c.exists()))
+                    .append(" · leer ").append(yes(c.canRead())).append(" · escribir ").append(yes(c.canWrite()));
+            try {
+                android.os.StatFs st = new android.os.StatFs(c.getAbsolutePath());
+                r.append(" · libre ").append(st.getAvailableBytes() / (1024 * 1024)).append(" MB de ")
+                        .append(st.getTotalBytes() / (1024 * 1024)).append(" MB");
+            } catch (Throwable ignored) { }
+            r.append("\n");
+            File test = new File(c, "prueba_dashcam_" + stamp + ".txt");
+            try {
+                FileOutputStream out = new FileOutputStream(test);
+                out.write("prueba".getBytes("UTF-8"));
+                out.close();
+                r.append("   ✔ ESCRIBIÓ ").append(test.getName()).append(test.delete() ? " (y lo borró)" : "").append("\n");
+            } catch (Throwable t) {
+                r.append("   ✘ no puede escribir: ").append(t.getMessage()).append("\n");
+            }
+        }
+        return r.toString();
+    }
+
     // ---------------------------------------------------------------- botones
 
     private void buildButtons() {
         buttonsRow.removeAllViews();
         addButton("Repetir", new View.OnClickListener() {
             public void onClick(View v) { reportView.setText("Analizando…"); runDiagnostics(); }
+        });
+        addButton("Probar USB", new View.OnClickListener() {
+            public void onClick(View v) {
+                reportView.setText("Probando escritura en USB…");
+                new Thread(new Runnable() {
+                    public void run() {
+                        final String r = usbTest();
+                        ui.post(new Runnable() { public void run() { reportView.setText(r); } });
+                    }
+                }).start();
+            }
         });
         addButton("Dashcam segura", new View.OnClickListener() {
             public void onClick(View v) { startActivity(new Intent(MainActivity.this, SafeCamActivity.class)); }
