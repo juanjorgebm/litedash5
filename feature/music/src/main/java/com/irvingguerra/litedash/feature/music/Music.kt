@@ -74,6 +74,7 @@ private val SOURCE_WORDS = mapOf(
  * cualquier app del sistema con "radio" en el paquete o el nombre.
  */
 private val GEELY_RADIO_APPS = listOf(
+    "com.neusoft.shockwave.radio", // la "Radio" de fábrica del Okavango (Neusoft, RadioService)
     "com.ecarx.radio", "com.ecarx.xui.radio", "com.ecarx.fmradio", "ecarx.radio",
     "com.geely.radio", "com.geely.fmradio", "com.geely.gkui.radio", "com.gkui.radio",
     "com.android.fmradio", "com.caf.fmradio", "com.qualcomm.fmradio", "com.mediatek.fmradio",
@@ -93,6 +94,10 @@ private fun sessionRank(pkg: String) = when {
     isProjection(pkg) -> 2
     else -> 1
 }
+
+/** La Radio de fábrica de la pantalla del Okavango (Neusoft). */
+const val CAR_RADIO_APP = "com.neusoft.shockwave.radio"
+private const val KEY_CAR_RADIO_LINKED = "car_radio_linked"
 
 /** Cuánto se espera a que la app despertada empiece a sonar antes de abrirla. */
 private const val WAKE_TIMEOUT_MS = 4_000L
@@ -1322,8 +1327,14 @@ class MusicRepository(private val context: Context) {
             candidates.filter { (_, t) -> words.any { it in t } }.singleOrNull()?.let { kind to it.first }
         }.toMap().toMutableMap()
         if (SourceKind.RADIO !in found) guessRadio(launchable)?.let { found[SourceKind.RADIO] = it }
+        // Una sola vez: la Radio de fábrica del Okavango manda sobre una radio adivinada antes (otra app).
+        val carRadio = CAR_RADIO_APP.takeIf { it in launchable && !store.getBoolean(KEY_CAR_RADIO_LINKED, false) }
+        if (carRadio != null) found[SourceKind.RADIO] = carRadio
         if (found.isEmpty()) return
-        mainHandler.post { for ((kind, pkg) in found) if (kind !in sourceApps) setSource(kind, pkg) }
+        mainHandler.post {
+            for ((kind, pkg) in found) if (kind !in sourceApps || (pkg == carRadio && sourceApps[kind] != pkg)) setSource(kind, pkg)
+            if (carRadio != null) store.edit().putBoolean(KEY_CAR_RADIO_LINKED, true).apply()
+        }
     }
 
     /**

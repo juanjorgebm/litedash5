@@ -76,6 +76,7 @@ import com.irvingguerra.litedash.core.vehicle.Signal
 import com.irvingguerra.litedash.core.vehicle.VehicleBus
 import com.irvingguerra.litedash.feature.apps.App
 import com.irvingguerra.litedash.feature.apps.AppIcon
+import com.irvingguerra.litedash.feature.music.SourceKind
 import com.irvingguerra.litedash.feature.apps.AppRepository
 import com.irvingguerra.litedash.feature.apps.rememberApps
 import com.irvingguerra.litedash.feature.car.CarPackage
@@ -525,7 +526,7 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
                     if (projection != null) d.apps.open(railContext, projection) else panel = Panel.Drawer
                 },
                 onMusic = { expanded = Expanded.MUSIC },
-                onRadio = { expanded = Expanded.RADIO },
+                onRadio = { if (d.music.sourceApps[SourceKind.RADIO] != null) d.music.openRadioApp() else expanded = Expanded.RADIO },
                 onPhone = { openDialer(railContext) },
                 onApps = { panel = Panel.Drawer },
                 onSettings = { panel = Panel.Settings },
