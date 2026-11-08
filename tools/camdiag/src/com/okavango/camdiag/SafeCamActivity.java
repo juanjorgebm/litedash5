@@ -83,7 +83,7 @@ public class SafeCamActivity extends Activity implements TextureView.SurfaceText
     }
 
     private void open() {
-        if (isFinishing()) return;
+        if (isFinishing() || paused) return;
         try {
             camera = Camera.open(CAM_ID);
         } catch (Throwable t) {
@@ -214,6 +214,27 @@ public class SafeCamActivity extends Activity implements TextureView.SurfaceText
 
     @Override
     public void onSurfaceTextureUpdated(SurfaceTexture st) { }
+
+    private boolean paused;
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // En segundo plano no pedimos la cámara: así no le peleamos la cámara a Vista 360°.
+        paused = true;
+        handler.removeCallbacksAndMessages(null);
+        handler.post(new Runnable() { public void run() { release(); } });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (paused) {
+            paused = false;
+            add("De vuelta en la app");
+            if (surface != null) handler.post(new Runnable() { public void run() { open(); } });
+        }
+    }
 
     @Override
     protected void onDestroy() {
