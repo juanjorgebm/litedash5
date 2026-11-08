@@ -112,6 +112,8 @@ fun OkavangoScene(d: Dependencies, onClick: () -> Unit, modifier: Modifier = Mod
                 alignment = Alignment.BottomCenter,
             )
         }
+        // Pieza angosta: sin panel, pero el clima se ve igual, en una píldora arriba a la derecha (sin tocar nada).
+        if (!wide) WeatherPill(weather, Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 18.dp))
         if (wide) WeatherPanel(weather, Modifier.align(Alignment.CenterEnd).padding(end = 18.dp, top = 18.dp, bottom = 18.dp).width(panelWidth - 18.dp).fillMaxHeight())
     }
 }
@@ -152,6 +154,31 @@ private fun WeatherPanel(weather: Weather?, modifier: Modifier) {
                 Icon(iconOf(skyOf(day.code), true), c.accent, 22.dp)
                 Label("  ${day.max}°/${day.min}°", Typography.body, c.textMuted, 1)
             }
+        }
+    }
+}
+
+/** Ícono y temperatura (con el cielo) en una píldora, para cuando la pieza no es lo bastante ancha para el panel. */
+@Composable
+private fun WeatherPill(weather: Weather?, modifier: Modifier) {
+    val c = LocalColors.current
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier
+            .clip(shape)
+            .background(Color(0xB30E1115))
+            .border(1.dp, Color.White.copy(alpha = 0.2f), shape)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (weather == null) {
+            Label(stringResource(R.string.weather_unknown), Typography.body, c.textMuted, 1)
+        } else {
+            val sky = skyOf(weather.code)
+            Icon(iconOf(sky, weather.day), c.accent, 28.dp)
+            Label("${weather.temperature}°", Typography.title, Color.White, 1)
+            Label(stringResource(textOf(sky)), Typography.small, c.textMuted, 1)
         }
     }
 }

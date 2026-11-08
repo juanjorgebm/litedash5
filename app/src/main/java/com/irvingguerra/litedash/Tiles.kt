@@ -92,6 +92,7 @@ val TileSpecs = listOf(
     TileSpec(TileTypes.BLUETOOTH, R.string.tile_bluetooth, SizeLimits(1, 1), 2 to 1, R.string.tile_bluetooth_help),
     TileSpec(TileTypes.FAVORITES, R.string.tile_favorites, SizeLimits(2, 2), 3 to 3, R.string.tile_favorites_help),
     TileSpec(TileTypes.CAR_NAV, R.string.tile_car_nav, SizeLimits(2, 1), 4 to 3, R.string.tile_car_nav_help),
+    TileSpec(TileTypes.COMPASS, R.string.tile_compass, SizeLimits(2, 2), 2 to 2, R.string.tile_compass_help),
     TileSpec(TileTypes.WIDGET, R.string.tile_widget, SizeLimits(2, 1), 3 to 2, R.string.tile_widget_help),
 )
 

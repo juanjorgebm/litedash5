@@ -34,9 +34,11 @@ data class Tile(
     val data: String = "",
     /** Sin fondo de tarjeta: lo de adentro flota sobre el fondo del inicio. */
     val plain: Boolean = false,
+    /** Página del inicio (0 = la primera): lo que no cabe en una página pasa a la siguiente. */
+    val page: Int = 0,
 ) {
     fun overlaps(other: Tile) =
-        col < other.col + other.width && other.col < col + width &&
+        page == other.page && col < other.col + other.width && other.col < col + width &&
             row < other.row + other.height && other.row < row + height
 }
 
@@ -56,11 +58,27 @@ fun List<Tile>.fits(p: Tile, c: Grid): Boolean =
         none { it.id != p.id && it.overlaps(p) }
 
 /** Primer lugar libre (de arriba abajo, de izquierda a derecha) para una pieza de ese tamaño. */
-fun List<Tile>.freeSpot(width: Int, height: Int, c: Grid): Pair<Int, Int>? {
+fun List<Tile>.freeSpot(width: Int, height: Int, c: Grid, page: Int = 0): Pair<Int, Int>? {
     for (row in 0..c.rows - height) for (col in 0..c.columns - width) {
-        if (fits(Tile("?", "?", col, row, width, height), c)) return col to row
+        if (fits(Tile("?", "?", col, row, width, height, page = page), c)) return col to row
     }
     return null
+}
+
+/** Primer lugar libre desde la página [from]; si ninguna tiene, el principio de una página nueva. Devuelve (col, row, página). */
+fun List<Tile>.freeSpotAnyPage(width: Int, height: Int, c: Grid, from: Int = 0): Triple<Int, Int, Int>? {
+    val last = (maxOfOrNull { it.page } ?: 0) + 1
+    for (page in from..maxOf(from, last)) {
+        freeSpot(width, height, c, page)?.let { (col, row) -> return Triple(col, row, page) }
+    }
+    return null
+}
+
+/** Quita las páginas vacías: las que quedan se numeran seguidas desde 0. */
+fun List<Tile>.compactPages(): List<Tile> {
+    val pages = map { it.page }.distinct().sorted()
+    if (pages == pages.indices.toList()) return this
+    return map { t -> t.copy(page = pages.indexOf(t.page)) }
 }
 
 /**
@@ -90,7 +108,7 @@ fun List<Tile>.adaptTo(c: Grid, limits: (String) -> SizeLimits): List<Tile> {
         )
         val spot = if (placed.fits(inside, c)) inside else
             listOf(width to height, m.minWidth to m.minHeight).firstNotNullOfOrNull { (w, h) ->
-                placed.freeSpot(w, h, c)?.let { (col, row) -> t.copy(col = col, row = row, width = w, height = h) }
+                placed.freeSpotAnyPage(w, h, c, t.page)?.let { (col, row, page) -> t.copy(col = col, row = row, width = w, height = h, page = page) }
             }
         if (spot != null) placed += spot
     }
@@ -136,6 +154,8 @@ object TileTypes {
     const val WIDGET = "widget"
     /** La guía de la navegación del carro (calle, giro, distancias, límite); viene por broadcast de Amap. */
     const val CAR_NAV = "car_nav"
+    /** Brújula con el rumbo del carro (sensor magnético de la pantalla o rumbo de la navegación). */
+    const val COMPASS = "compass"
 }
 
 /** Sin fondo de tarjeta siempre: el auto, la carretera y la imagen flotan sobre el inicio. */

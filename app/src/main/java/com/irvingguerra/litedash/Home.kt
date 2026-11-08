@@ -295,6 +295,7 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
             val navApp = mapApp(d, apps)
             CarNavTile(onOpen = remember(navApp) { { actions.onNavigate(navApp) } })
         }
+        TileTypes.COMPASS -> CompassTile()
         TileTypes.WIDGET -> WidgetTile(p.data)
         TileTypes.PHONE -> ShortcutTile(Icons.phone, stringResource(R.string.tile_phone), null) {
             openDialer(context)
@@ -609,12 +610,11 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
                                     MapExpanded(d, from?.data ?: "", app, onPlace = { navigateTo(context, app, it) }, onNavigate = { actions.onNavigate(app) }, close = close, Modifier.padding(6.dp))
                                 }
                             }
-                        } else Dashboard(
+                        } else PagedDashboard(
+                                state = d.dashboard,
                                 grid = grid,
-                                tiles = d.dashboard.shown,
                                 editing = editing,
                                 limits = ::limitsOf,
-                                onChange = d.dashboard::changeShown,
                                 onEdit = { editing = true },
                                 onSettings = {
                                     panel = when (it.type) {

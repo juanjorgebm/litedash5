@@ -771,4 +771,11 @@
     <string name="nav_remaining">Faltan %1$s · %2$s</string>
     <string name="nav_limit">Límite %1$d km/h</string>
     <string name="template_nav_music">Navegación + música</string>
+    <string name="tile_compass">Brújula</string>
+    <string name="tile_compass_help">Rumbo del carro: sensor de la pantalla o navegación</string>
+    <string name="compass_none">Sin rumbo</string>
+    <string name="compass_n">N</string>
+    <string name="compass_e">E</string>
+    <string name="compass_s">S</string>
+    <string name="compass_w">O</string>
 </resources>

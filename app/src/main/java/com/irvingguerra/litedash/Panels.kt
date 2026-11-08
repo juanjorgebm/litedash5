@@ -266,6 +266,7 @@ internal fun iconOf(type: String) = when (type) {
     TileTypes.BLUETOOTH -> Icons.bluetooth
     TileTypes.FAVORITES -> Icons.phone
     TileTypes.CAR_NAV -> Icons.navigate
+    TileTypes.COMPASS -> Icons.navigate
     TileTypes.WIDGET -> Icons.apps
     else -> Icons.apps
 }

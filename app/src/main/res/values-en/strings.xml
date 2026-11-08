@@ -750,4 +750,11 @@
     <string name="nav_remaining">%1$s · %2$s left</string>
     <string name="nav_limit">Limit %1$d km/h</string>
     <string name="template_nav_music">Navigation + music</string>
+    <string name="tile_compass">Compass</string>
+    <string name="tile_compass_help">Car heading: screen sensor or navigation</string>
+    <string name="compass_none">No heading</string>
+    <string name="compass_n">N</string>
+    <string name="compass_e">E</string>
+    <string name="compass_s">S</string>
+    <string name="compass_w">W</string>
 </resources>
