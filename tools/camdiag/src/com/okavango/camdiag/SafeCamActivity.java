@@ -42,6 +42,7 @@ public class SafeCamActivity extends Activity implements TextureView.SurfaceText
     private long lastAnalysis;
     private boolean released;
     private int reverseFramesAfterOpen;
+    private float maxRed, maxYellow;
     private final StringBuilder logText = new StringBuilder();
     private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
 
@@ -142,13 +143,23 @@ public class SafeCamActivity extends Activity implements TextureView.SurfaceText
         }
         float rp = 100f * red / total, yp = 100f * yellow / total;
         boolean reverse = rp >= RED_MIN && yp >= YELLOW_MIN;
-        setStats(String.format(Locale.US, "Dashcam segura · %dx%d · rojo %.2f%% · amarillo %.2f%% · %s",
-                w, h, rp, yp, reverse ? "REVERSA" : "normal"));
+        if (!reverse) { maxRed = Math.max(maxRed, rp); maxYellow = Math.max(maxYellow, yp); }
+        setStats(String.format(Locale.US, "Dashcam segura · rojo %.2f%% · amarillo %.2f%% · %s · máx. normal: rojo %.2f%% amarillo %.2f%%",
+                rp, yp, reverse ? "REVERSA" : "normal", maxRed, maxYellow));
         if (reverse) {
-            add(String.format(Locale.US, "REVERSA detectada (rojo %.2f%%, amarillo %.2f%%) → suelto la cámara", rp, yp));
+            add(String.format(Locale.US, "REVERSA detectada (rojo %.2f%%, amarillo %.2f%%) → suelto la cámara y abro Vista 360°", rp, yp));
             release();
             released = true;
-            handler.postDelayed(new Runnable() { public void run() { open(); } }, 2000);
+            // El sistema no reintenta su pantalla de reversa: la abrimos nosotros.
+            try {
+                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_MAIN);
+                i.setClassName("com.neusoft.avm", "com.neusoft.avm.MainActivity");
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Throwable t) {
+                add("No se pudo abrir Vista 360°: " + t);
+            }
+            handler.postDelayed(new Runnable() { public void run() { open(); } }, 3000);
             return;
         }
         c.addCallbackBuffer(d);
