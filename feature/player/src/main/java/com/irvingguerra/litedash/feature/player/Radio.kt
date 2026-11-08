@@ -15,6 +15,7 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URLEncoder
 import java.util.Locale
+import androidx.core.content.ContextCompat
 
 /** Una estación de radio por internet (de la base abierta Radio Browser). */
 class Station(
@@ -86,10 +87,10 @@ object Radio {
     /** La última ubicación que tenga Android (GPS o red), si LiteDash tiene permiso; sin pedir nada. */
     @SuppressLint("MissingPermission") // se revisa justo antes
     fun here(context: Context): Here? {
-        val fine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) return null
-        val manager = context.getSystemService(LocationManager::class.java) ?: return null
+        val manager = ContextCompat.getSystemService(context, LocationManager::class.java) ?: return null
         return runCatching {
             manager.allProviders.mapNotNull { manager.getLastKnownLocation(it) }.maxByOrNull { it.time }
         // Redondeada a 0.1° (~10 km): para estaciones a 120 km sobra, y no se manda la ubicación exacta.

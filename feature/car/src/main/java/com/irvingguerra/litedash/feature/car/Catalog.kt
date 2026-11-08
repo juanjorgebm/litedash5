@@ -143,7 +143,7 @@ class CarRepository(private val context: Context, val catalogUrl: String) {
      * van al heap de Java) con heap chico. Ahí lo que se prepara aparte del giro va más reducido.
      */
     val lowMemory: Boolean by lazy {
-        context.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true ||
+        (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.isLowRamDevice == true ||
             Build.VERSION.SDK_INT < Build.VERSION_CODES.O && Runtime.getRuntime().maxMemory() <= LOW_HEAP
     }
 

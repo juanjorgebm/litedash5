@@ -22,6 +22,7 @@ import org.json.JSONObject
 import java.util.Locale
 import kotlin.coroutines.resume
 import com.irvingguerra.litedash.core.ui.Https
+import androidx.core.content.ContextCompat
 
 /** Clima tal como se ve: temperaturas redondeadas en la unidad elegida (códigos WMO de Open-Meteo). */
 data class Weather(val temperature: Int, val code: Int, val day: Boolean, val days: List<WeatherDay>)
@@ -82,7 +83,7 @@ class WeatherRepository(private val context: Context, private val prefs: Prefere
         private set
 
     /** Activado y con permiso de ubicación aproximada. */
-    val active get() = enabled && context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val active get() = enabled && ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     fun enable() = turn(true)
 
@@ -106,7 +107,7 @@ class WeatherRepository(private val context: Context, private val prefs: Prefere
 
     @SuppressLint("MissingPermission") // [active] revisa el permiso antes
     private suspend fun location(): Location? {
-        val manager = context.getSystemService(LocationManager::class.java)
+        val manager = ContextCompat.getSystemService(context, LocationManager::class.java)!!
         // La última conocida se lee del sistema (binder): fuera del hilo principal.
         val last = withContext(Dispatchers.IO) {
             manager.getProviders(true)

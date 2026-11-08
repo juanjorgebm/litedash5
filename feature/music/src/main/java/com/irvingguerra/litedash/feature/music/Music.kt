@@ -109,7 +109,7 @@ private val BRAND_BT_APPS = listOf(
  * música está en pantalla ([use]/[release] cuentan cuántas): nada de polling.
  */
 class MusicRepository(private val context: Context) {
-    private val sessionManager = context.getSystemService(MediaSessionManager::class.java)
+    private val sessionManager = ContextCompat.getSystemService(context, MediaSessionManager::class.java)!!
     private val component = ComponentName(context, NotificationService::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var users = 0
@@ -294,7 +294,7 @@ class MusicRepository(private val context: Context) {
 
     fun hasPermission(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            context.getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(component)
+            ContextCompat.getSystemService(context, NotificationManager::class.java)!!.isNotificationListenerAccessGranted(component)
         } else {
             Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
                 ?.contains(component.flattenToString()) == true
@@ -1138,7 +1138,7 @@ class MusicRepository(private val context: Context) {
         mainHandler.removeCallbacks(returnAndPlay)
     }
 
-    private fun musicActive() = context.getSystemService(AudioManager::class.java).isMusicActive
+    private fun musicActive() = ContextCompat.getSystemService(context, AudioManager::class.java)!!.isMusicActive
 
     /**
      * FYT (pantallas cuyo MCU elige la fuente de audio): dar play al celular por AVRCP no basta,
@@ -1310,7 +1310,7 @@ class MusicRepository(private val context: Context) {
 
     /** Para los reportes: qué Bluetooth trae la pantalla y qué apps de marca, para saber su familia. */
     private fun describeBluetooth(): String = buildString {
-        val adapter = runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter }.getOrNull()
+        val adapter = runCatching { ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter }.getOrNull()
         val service = bluetoothService
         appendLine("Bluetooth de Android: AVRCP=${service?.let { "${it.packageName}/${it.name}" } ?: "no"}; adaptador=${adapter?.let { if (it.isEnabled) "encendido" else "apagado" } ?: "no"}")
         val brand = BRAND_BT_APPS.filter { runCatching { context.packageManager.getPackageInfo(it, 0) }.isSuccess }
@@ -1361,7 +1361,7 @@ class MusicRepository(private val context: Context) {
                     (lens.assumedPkg?.let { "; supone $it" } ?: ""),
             )
         }
-        appendLine("Audio sonando en Android: ${yes(context.getSystemService(AudioManager::class.java).isMusicActive)}")
+        appendLine("Audio sonando en Android: ${yes(ContextCompat.getSystemService(context, AudioManager::class.java)!!.isMusicActive)}")
         if (TopWayRadio.available) {
             val tw = topWay
             appendLine(

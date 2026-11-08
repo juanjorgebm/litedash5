@@ -36,6 +36,12 @@ jobs:
             exit 1
           fi
 
+      - name: APK para instalar a mano (Android 5 o más nuevo)
+        uses: actions/upload-artifact@v4
+        with:
+          name: litedash-apk
+          path: app/build/outputs/apk/github/release/app-github-release.apk
+
       - name: Reportes de lint
         if: failure()
         uses: actions/upload-artifact@v4

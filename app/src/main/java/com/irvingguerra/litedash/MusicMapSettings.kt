@@ -38,6 +38,7 @@ import com.irvingguerra.litedash.feature.music.label
 import com.irvingguerra.litedash.feature.player.Library
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.core.content.ContextCompat
 
 /**
  * Ajustes → Apps → Música → "Tu app de música": la que sale con su nombre junto a USB en la
@@ -172,7 +173,7 @@ fun rememberInternetRadioToggle(d: Dependencies): (Boolean) -> Unit {
 private fun BluetoothNamePermission() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
     val context = LocalContext.current
-    var granted by remember { mutableStateOf(context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) }
+    var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) }
     if (granted) return
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     Button(stringResource(R.string.bluetooth_name_permission), { ask.launch(Manifest.permission.BLUETOOTH_CONNECT) }, Modifier.padding(bottom = 6.dp))

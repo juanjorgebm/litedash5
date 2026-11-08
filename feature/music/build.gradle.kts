@@ -6,7 +6,7 @@ plugins {
 android {
     namespace = "com.irvingguerra.litedash.feature.music"
     compileSdk = 37
-    defaultConfig { minSdk = 23 }
+    defaultConfig { minSdk = 21 }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

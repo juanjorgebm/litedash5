@@ -49,7 +49,7 @@ android {
 
     defaultConfig {
         applicationId = "com.irvingguerra.litedash"
-        minSdk = 23
+        minSdk = 21
         targetSdk = 37
         versionCode = versionCodeFrom(appVersionName)
         versionName = appVersionName
@@ -124,6 +124,8 @@ android {
         // Las versiones se fijan a mano; no son errores.
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
         warningsAsErrors = false
+        // Los errores también en la consola: así se ven en el log de CI sin bajar el reporte.
+        textReport = true
     }
 
     // El idioma se elige dentro de la app: Play debe traer español e inglés siempre.
