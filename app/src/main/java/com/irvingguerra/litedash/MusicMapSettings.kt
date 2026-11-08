@@ -243,9 +243,18 @@ private fun exportCarApps(context: android.content.Context): String {
     val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "litedash-apks")
     return runCatching {
         dir.mkdirs()
+        val installed = context.packageManager.getInstalledApplications(0)
+        // Lista de las apps del carro (Neusoft, Geely, ECARX) para saber cuáles hay.
+        val carPackages = installed.map { it.packageName }.filter { Regex("(?i)(neusoft|geely|ecarx)").containsMatchIn(it) }.sorted()
+        runCatching { java.io.File(dir, "paquetes.txt").writeText(carPackages.joinToString("\n")) }
+        // Las de Bluetooth: ahí está cómo se enciende y se reconecta (no las de Android).
+        val bluetooth = installed.map { it.packageName }.filter {
+            it != "com.android.bluetooth" && Regex("(?i)(bluetooth|btphone|btlogic|\\.bt\\b|\\.bt\\.)").containsMatchIn(it)
+        }
         buildString {
             appendLine("Carpeta: ${dir.absolutePath}")
-            for (pkg in CAR_APPS) {
+            appendLine("paquetes.txt: ${carPackages.size} apps del carro")
+            for (pkg in (CAR_APPS + bluetooth).distinct()) {
                 val result = runCatching {
                     val src = java.io.File(context.packageManager.getApplicationInfo(pkg, 0).sourceDir)
                     val dst = java.io.File(dir, "$pkg.apk")
