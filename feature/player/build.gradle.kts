@@ -6,7 +6,7 @@ plugins {
 android {
     namespace = "com.irvingguerra.litedash.feature.player"
     compileSdk = 37
-    defaultConfig { minSdk = 21 }
+    defaultConfig { minSdk = 22 }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

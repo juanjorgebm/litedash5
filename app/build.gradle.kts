@@ -49,7 +49,7 @@ android {
 
     defaultConfig {
         applicationId = "com.irvingguerra.litedash"
-        minSdk = 21
+        minSdk = 22
         targetSdk = 37
         versionCode = versionCodeFrom(appVersionName)
         versionName = appVersionName
