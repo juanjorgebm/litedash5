@@ -49,6 +49,7 @@ public class ReverseWatchActivity extends Activity {
     private Map<String, String> lastSwitches = new HashMap<>();
     private Map<String, String> lastProcs = new HashMap<>();
     private Map<String, String> lastImportance = new HashMap<>();
+    private Map<String, String> lastSettings = new HashMap<>();
     private boolean running = true;
     private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
 
@@ -69,7 +70,7 @@ public class ReverseWatchActivity extends Activity {
         TextView title = new TextView(this);
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        title.setText("Monitor de reversa v1.6: mete reversa 5 s, quítala 5 s, y repite una vez más.");
+        title.setText("Monitor de reversa v1.7: mete reversa 5 s, quítala 5 s, y repite una vez más.");
         root.addView(title);
         ScrollView sv = new ScrollView(this);
         log = new TextView(this);
@@ -93,6 +94,8 @@ public class ReverseWatchActivity extends Activity {
                 lastSwitches = readSwitches();
                 lastProcs = readProcs();
                 lastImportance = readImportance();
+                lastSettings = readSettings();
+                add("Ajustes leídos: " + lastSettings.size());
                 for (Map.Entry<String, String> e : lastImportance.entrySet()) add("app " + e.getKey() + " = " + e.getValue());
                 add("Inicio: " + lastProps.size() + " propiedades, " + lastSwitches.size()
                         + " switches, " + lastProcs.size() + " procesos. Esperando cambios…");
@@ -110,6 +113,7 @@ public class ReverseWatchActivity extends Activity {
                 diff("switch", lastSwitches, lastSwitches = readSwitches());
                 diff("proceso", lastProcs, lastProcs = readProcs());
                 diff("app", lastImportance, lastImportance = readImportance());
+                diff("ajuste", lastSettings, lastSettings = readSettings());
             } catch (Throwable t) {
                 add("ERROR " + t);
             }
@@ -198,6 +202,26 @@ public class ReverseWatchActivity extends Activity {
             }
         } catch (Throwable t) {
             m.put("error", String.valueOf(t));
+        }
+        return m;
+    }
+
+    /** Todas las filas de Settings.System / Global / Secure (el carro escribe ahí al meter reversa). */
+    private Map<String, String> readSettings() {
+        Map<String, String> m = new HashMap<>();
+        String[] tables = {"system", "global", "secure"};
+        for (String t : tables) {
+            android.database.Cursor c = null;
+            try {
+                c = getContentResolver().query(android.net.Uri.parse("content://settings/" + t),
+                        new String[]{"name", "value"}, null, null, null);
+                if (c == null) continue;
+                while (c.moveToNext()) m.put(t + "/" + c.getString(0), String.valueOf(c.getString(1)));
+            } catch (Throwable e) {
+                m.put(t + "/ERROR", String.valueOf(e));
+            } finally {
+                if (c != null) c.close();
+            }
         }
         return m;
     }
