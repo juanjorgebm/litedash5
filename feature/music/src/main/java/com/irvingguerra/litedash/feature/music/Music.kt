@@ -912,11 +912,13 @@ class MusicRepository(private val context: Context) {
          * teclas (casi siempre la estación guardada que sigue o buscar la siguiente).
          */
         fun next() {
+            if (carMusicBlind(this)) return resume()
             topWayFor(this)?.let { trace("topway siguiente"); return it.next() }
             controller?.transportControls?.takeUnless { song?.blind == true || keysOnly(PlaybackState.ACTION_SKIP_TO_NEXT) }?.skipToNext() ?: press(this, KeyEvent.KEYCODE_MEDIA_NEXT)
         }
 
         fun previous() {
+            if (carMusicBlind(this)) return resume()
             topWayFor(this)?.let { trace("topway anterior"); return it.previous() }
             controller?.transportControls?.takeUnless { song?.blind == true || keysOnly(PlaybackState.ACTION_SKIP_TO_PREVIOUS) }?.skipToPrevious() ?: press(this, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
         }
@@ -1027,6 +1029,14 @@ class MusicRepository(private val context: Context) {
         }
         if (pkg == null) return systemPlay()
         if (isOwn(pkg)) return ownPlay?.invoke(SourceKind.USB) {} ?: Unit
+        // La Música de fábrica del Okavango no publica sesión, receptor ni servicio de música: no hay cómo
+        // darle play ni leer su canción desde fuera. Se abre su pantalla (sin abrir y regresar en bucle).
+        if (pkg == CAR_MUSIC_APP) {
+            trace("música del carro: sin control externo, se abre $pkg")
+            music.starting = null
+            open(pkg)
+            return
+        }
         watchPlay(pkg)
         wake(pkg, music)
     }
@@ -1210,6 +1220,10 @@ class MusicRepository(private val context: Context) {
      * el reproductor propio: ahí el sistema la llevaría a otra app (y podría arrancar Spotify).
      * False = no hubo a quién.
      */
+    /** ¿La pieza apunta a la Música de fábrica del carro sin sesión? Ahí no hay cómo mandar teclas. */
+    private fun carMusicBlind(lens: Lens): Boolean =
+        lens !== radio && target(lens) == CAR_MUSIC_APP && lens.controller?.packageName != CAR_MUSIC_APP
+
     private fun press(lens: Lens, code: Int): Boolean {
         val pkg = target(lens)
         val receiver = keyReceiver(pkg)
