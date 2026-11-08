@@ -7,6 +7,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Looper
+import android.os.Handler
+import android.database.ContentObserver
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
@@ -55,7 +58,7 @@ fun WifiToggleTile() {
     val wifi = remember { ContextCompat.getSystemService(context.applicationContext, WifiManager::class.java) }
     var on by remember { mutableStateOf(wifi?.isWifiEnabled) }
     SystemBroadcast(WifiManager.WIFI_STATE_CHANGED_ACTION) { on = wifi?.isWifiEnabled }
-    ToggleTile(Icons.wifi, stringResource(R.string.tile_wifi), on) {
+    ToggleTile(Icons.wifi, stringResource(R.string.tile_wifi), on, null) {
         val target = on != true
         @Suppress("DEPRECATION") // en Android 10+ no hace nada: ahí se abre el ajuste
         val done = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && wifi != null &&
@@ -64,27 +67,58 @@ fun WifiToggleTile() {
     }
 }
 
-/** Bluetooth: encendido, apagado o sin Bluetooth (null). */
+/**
+ * Bluetooth. La pantalla del Okavango (Neusoft) maneja su propio Bluetooth y el de Android siempre sale apagado: el
+ * estado real está en los ajustes del sistema (se vio con el monitor de la pantalla): `com.neusoft.geely.bluetooth.state`
+ * (12 = encendido, 10 = apagado), `BTPhone` y `BTAudio` ("Connected" / "Disconnected"). Se lee eso y, si no hay, Android.
+ */
 @SuppressLint("MissingPermission") // Android 12: si falta BLUETOOTH_CONNECT, runCatching y se abre el ajuste
 @Composable
 fun BluetoothToggleTile() {
     val context = LocalContext.current
     val adapter = remember { ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter }
-    var on by remember { mutableStateOf(adapter?.isEnabled) }
-    SystemBroadcast(BluetoothAdapter.ACTION_STATE_CHANGED) { on = adapter?.isEnabled }
-    ToggleTile(Icons.bluetooth, stringResource(R.string.tile_bluetooth), on) {
+    var car by remember { mutableStateOf(readCarBluetooth(context)) }
+    var android by remember { mutableStateOf(adapter?.isEnabled) }
+    SystemBroadcast(BluetoothAdapter.ACTION_STATE_CHANGED) { android = adapter?.isEnabled }
+    DisposableEffect(Unit) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { car = readCarBluetooth(context) }
+        }
+        val resolver = context.contentResolver
+        val registered = runCatching {
+            CAR_BT_KEYS.forEach { resolver.registerContentObserver(Settings.System.getUriFor(it), false, observer) }
+        }.isSuccess
+        car = readCarBluetooth(context)
+        onDispose { if (registered) runCatching { resolver.unregisterContentObserver(observer) } }
+    }
+    val on = car.on ?: android
+    val state = when {
+        car.phone -> stringResource(R.string.toggle_phone_connected)
+        on == true -> stringResource(R.string.toggle_on)
+        else -> stringResource(R.string.toggle_off)
+    }
+    ToggleTile(Icons.bluetooth, stringResource(R.string.tile_bluetooth), on == true || car.phone, state) {
         val target = on != true
         @Suppress("DEPRECATION") // enable()/disable(): desde Android 13 ya no se dejan usar
-        val done = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && adapter != null &&
+        val done = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && adapter != null && car.on == null &&
             runCatching { if (target) adapter.enable() else adapter.disable() }.getOrDefault(false)
-        if (done) on = target else openSettings(context, Settings.ACTION_BLUETOOTH_SETTINGS)
+        if (done) android = target else openSettings(context, Settings.ACTION_BLUETOOTH_SETTINGS)
     }
 }
 
-/**
- * Abre el ajuste del sistema; si la pantalla no trae esa pantalla de ajustes (algunas de carro la quitan),
- * prueba los ajustes inalámbricos y la app de Ajustes, y si nada abre, avisa en vez de quedarse callada.
- */
+private val CAR_BT_KEYS = listOf("com.neusoft.geely.bluetooth.state", "BTPhone", "BTAudio")
+
+/** Lo que dicen los ajustes de la pantalla del carro: Bluetooth encendido (null = no los trae) y celular conectado. */
+private data class CarBluetooth(val on: Boolean?, val phone: Boolean)
+
+private fun readCarBluetooth(context: Context): CarBluetooth = runCatching {
+    val r = context.contentResolver
+    val state = Settings.System.getString(r, "com.neusoft.geely.bluetooth.state")?.toIntOrNull()
+    val phone = Settings.System.getString(r, "BTPhone").equals("Connected", ignoreCase = true) ||
+        Settings.System.getString(r, "BTAudio").equals("Connected", ignoreCase = true)
+    CarBluetooth(on = state?.let { it == 12 || phone }, phone = phone)
+}.getOrDefault(CarBluetooth(null, false))
+
 private fun openSettings(context: Context, action: String) {
     val tries = listOf(Intent(action), Intent(Settings.ACTION_WIRELESS_SETTINGS), Intent(Settings.ACTION_SETTINGS))
     val opened = tries.any { runCatching { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess }
@@ -107,9 +141,9 @@ private fun SystemBroadcast(action: String, onChange: () -> Unit) {
 
 /** Ícono grande que se ilumina encendido; debajo (o al lado) el nombre y si está encendido. */
 @Composable
-private fun ToggleTile(icon: ImageVector, title: String, on: Boolean?, onClick: () -> Unit) {
+private fun ToggleTile(icon: ImageVector, title: String, on: Boolean?, stateText: String?, onClick: () -> Unit) {
     val c = LocalColors.current
-    val state = stringResource(if (on == true) R.string.toggle_on else R.string.toggle_off)
+    val state = stateText ?: stringResource(if (on == true) R.string.toggle_on else R.string.toggle_off)
     Card(Modifier.fillMaxSize(), onClick = onClick) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(14.dp)) {
             val large = maxHeight > 120.dp
