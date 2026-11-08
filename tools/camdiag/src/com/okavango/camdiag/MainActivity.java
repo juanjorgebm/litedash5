@@ -94,7 +94,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("Diagnóstico de cámaras · Okavango · v2.2");
+        title.setText("Diagnóstico de cámaras · Okavango · v2.3");
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         root.addView(title);
@@ -351,6 +351,55 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static final String[] APPS_TO_COPY = {
+            "com.neusoft.shockwave.instrumentserver", "com.neusoft.avm", "com.neusoft.extraservice",
+            "com.neusoft.shockwave.tboxclient", "com.neusoft.statusbar", "com.neusoft.ecarx.settingwidget",
+            "com.neusoft.cardvr", "com.neusoft.optimus.megatron", "ecarx.hvac.app"
+    };
+
+    /** Lista los sensores (¿acelerómetro?) y copia APKs del sistema a la USB para analizarlos. */
+    private String sensorsAndCopy() {
+        StringBuilder r = new StringBuilder("=== Sensores ===\n");
+        try {
+            android.hardware.SensorManager sm = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
+            List<android.hardware.Sensor> list = sm.getSensorList(android.hardware.Sensor.TYPE_ALL);
+            if (list.isEmpty()) r.append("Ninguno\n");
+            for (android.hardware.Sensor se : list) {
+                r.append("• ").append(se.getName()).append(" · tipo ").append(se.getType())
+                        .append(" · ").append(se.getVendor()).append('\n');
+            }
+        } catch (Throwable t) {
+            r.append("ERROR ").append(t).append('\n');
+        }
+        File usb = new File("/storage/usbotg/usbotg-sda2");
+        File dst = new File(usb.canWrite() ? usb : Environment.getExternalStorageDirectory(), "apps_carro");
+        dst.mkdirs();
+        r.append("\n=== Copiando apps a ").append(dst).append(" ===\n");
+        PackageManager pm = getPackageManager();
+        for (String pkg : APPS_TO_COPY) {
+            try {
+                ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                File src = new File(ai.sourceDir);
+                File out = new File(dst, pkg + ".apk");
+                java.io.InputStream in = new java.io.FileInputStream(src);
+                FileOutputStream o = new FileOutputStream(out);
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                in.close();
+                o.close();
+                r.append("✔ ").append(pkg).append(" (").append(out.length() / 1024).append(" KB)\n");
+                // Algunas apps del sistema tienen el código en un .odex aparte.
+                File dir = src.getParentFile();
+                String[] extra = dir == null ? null : dir.list();
+                if (extra != null) for (String e : extra) if (!e.endsWith(".apk")) r.append("    junto al APK: ").append(e).append('\n');
+            } catch (Throwable t) {
+                r.append("✘ ").append(pkg).append(": ").append(t.getMessage()).append('\n');
+            }
+        }
+        return r.toString();
+    }
+
     /** Busca memorias USB/SD montadas y prueba escribir en la raíz y en la carpeta propia de la app. */
     private String usbTest() {
         StringBuilder r = new StringBuilder("=== Prueba de USB ===\n");
@@ -402,6 +451,17 @@ public class MainActivity extends Activity {
         buttonsRow.removeAllViews();
         addButton("Repetir", new View.OnClickListener() {
             public void onClick(View v) { reportView.setText("Analizando…"); runDiagnostics(); }
+        });
+        addButton("Sensores y copiar apps a USB", new View.OnClickListener() {
+            public void onClick(View v) {
+                reportView.setText("Leyendo sensores y copiando apps…");
+                new Thread(new Runnable() {
+                    public void run() {
+                        final String r = sensorsAndCopy();
+                        ui.post(new Runnable() { public void run() { reportView.setText(r); } });
+                    }
+                }).start();
+            }
         });
         addButton("Probar USB", new View.OnClickListener() {
             public void onClick(View v) {
