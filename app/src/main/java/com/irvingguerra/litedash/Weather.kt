@@ -22,6 +22,7 @@ import org.json.JSONObject
 import java.util.Locale
 import kotlin.coroutines.resume
 import com.irvingguerra.litedash.core.ui.Https
+import com.irvingguerra.litedash.core.ui.MyCar
 import androidx.core.content.ContextCompat
 
 /** Clima tal como se ve: temperaturas redondeadas en la unidad elegida (códigos WMO de Open-Meteo). */
@@ -79,11 +80,15 @@ class WeatherRepository(private val context: Context, private val prefs: Prefere
     // Solo si el usuario lo activó: el permiso de ubicación también llega al activar
     // Viaje, y eso no debe encender el clima. Quien ya tenía clima guardado lo conserva.
     /** Prendido por el usuario (aunque aún falte el permiso). */
-    var enabled by mutableStateOf(store.getBoolean(KEY_ON, store.contains(KEY)))
+    // Prendido de fábrica: sin ubicación usa Palmares ([MyCar]).
+    var enabled by mutableStateOf(store.getBoolean(KEY_ON, true))
         private set
 
-    /** Activado y con permiso de ubicación aproximada. */
-    val active get() = enabled && ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    /** Con permiso de ubicación aproximada se usa la de la pantalla; si no, Palmares. */
+    private val hasLocation get() = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    /** Activado (no hace falta el permiso: sin él se usa Palmares). */
+    val active get() = enabled
 
     fun enable() = turn(true)
 
@@ -99,8 +104,10 @@ class WeatherRepository(private val context: Context, private val prefs: Prefere
         if (!active) return
         val last = saved
         if (!force && last != null && System.currentTimeMillis() - last.fetchedAt < STALE_MS) return
-        val place = location() ?: return
-        val fresh = runCatching { fetch(place.latitude, place.longitude) }.getOrNull() ?: return
+        val place = if (hasLocation) runCatching { location() }.getOrNull() else null
+        val lat = place?.latitude ?: MyCar.LATITUDE
+        val lon = place?.longitude ?: MyCar.LONGITUDE
+        val fresh = runCatching { fetch(lat, lon) }.getOrNull() ?: return
         saved = fresh
         withContext(Dispatchers.IO) { store.edit(commit = true) { putString(KEY, fresh.toJson().toString()) } }
     }

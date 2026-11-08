@@ -68,6 +68,17 @@ private val SOURCE_WORDS = mapOf(
     SourceKind.RADIO to listOf("radio", "fm"),
 )
 
+/**
+ * Radios de fábrica de las pantallas Geely (ECARX/GKUI, como la del Okavango): se enlazan solas si
+ * están instaladas. Los nombres son los que usan esas pantallas; si la del auto usa otro, se busca
+ * cualquier app del sistema con "radio" en el paquete o el nombre.
+ */
+private val GEELY_RADIO_APPS = listOf(
+    "com.ecarx.radio", "com.ecarx.xui.radio", "com.ecarx.fmradio", "ecarx.radio",
+    "com.geely.radio", "com.geely.fmradio", "com.geely.gkui.radio", "com.gkui.radio",
+    "com.android.fmradio", "com.caf.fmradio", "com.qualcomm.fmradio", "com.mediatek.fmradio",
+)
+
 /** Cuánto se espera a que la app despertada empiece a sonar antes de abrirla. */
 private const val WAKE_TIMEOUT_MS = 4_000L
 /** Tras abrir una radio sin control, cuánto se espera para regresar al inicio (y luego para anotar si sigue el audio). */
@@ -391,7 +402,8 @@ class MusicRepository(private val context: Context) {
         NotificationService.media = notifications
         loadSourceNotes()
         startTopWay()
-        if (!store.getBoolean(KEY_SOURCES_GUESSED, false)) {
+        // Mientras no haya radio enlazada se vuelve a buscar la de la pantalla en cada arranque.
+        if (!store.getBoolean(KEY_SOURCES_GUESSED, false) || SourceKind.RADIO !in sourceApps) {
             store.edit().putBoolean(KEY_SOURCES_GUESSED, true).apply()
             Thread(::guessSources, "music-sources").start()
         }
@@ -1289,9 +1301,28 @@ class MusicRepository(private val context: Context) {
         val candidates = systemPlayers().filter { it in launchable }.map { pkg -> pkg to tokens(pkg, appLabel(pkg)) }
         val found = SOURCE_WORDS.mapNotNull { (kind, words) ->
             candidates.filter { (_, t) -> words.any { it in t } }.singleOrNull()?.let { kind to it.first }
-        }.toMap()
+        }.toMap().toMutableMap()
+        if (SourceKind.RADIO !in found) guessRadio(launchable)?.let { found[SourceKind.RADIO] = it }
         if (found.isEmpty()) return
         mainHandler.post { for ((kind, pkg) in found) if (kind !in sourceApps) setSource(kind, pkg) }
+    }
+
+    /**
+     * La radio de la pantalla aunque no atienda el botón de play: primero las de Geely conocidas;
+     * si no, la única app del sistema que se pueda abrir con "radio" (o "fm") en el paquete o el nombre.
+     */
+    private fun guessRadio(launchable: Set<String>): String? {
+        GEELY_RADIO_APPS.firstOrNull { it in launchable }?.let { return it }
+        val pm = context.packageManager
+        val system = launchable.filter { pkg ->
+            pkg != context.packageName && runCatching { pm.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_SYSTEM != 0 }.getOrDefault(false)
+        }
+        val withRadio = system.filter { "radio" in tokens(it, appLabel(it)) || it.lowercase().contains("radio") }
+        withRadio.singleOrNull()?.let { return it }
+        // Varias: la que lo dice en el paquete (no solo en el nombre visible).
+        withRadio.filter { it.lowercase().contains("radio") }.singleOrNull()?.let { return it }
+        if (withRadio.isNotEmpty()) return null
+        return system.filter { "fm" in tokens(it, appLabel(it)) }.singleOrNull()
     }
 
     /** Palabras sueltas del paquete y del nombre, en minúsculas ("com.syu.bt" → com, syu, bt). */

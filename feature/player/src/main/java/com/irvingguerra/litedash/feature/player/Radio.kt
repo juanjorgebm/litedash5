@@ -1,5 +1,6 @@
 package com.irvingguerra.litedash.feature.player
 
+import com.irvingguerra.litedash.core.ui.MyCar
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -15,7 +16,6 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URLEncoder
-import java.util.Locale
 import androidx.core.content.ContextCompat
 
 /** Una estación de radio por internet (de la base abierta Radio Browser). */
@@ -90,12 +90,14 @@ object Radio {
     fun here(context: Context): Here? {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) return null
-        val manager = ContextCompat.getSystemService(context, LocationManager::class.java) ?: return null
+        // Sin permiso o sin ubicación: Palmares, Alajuela ([MyCar]).
+        val home = Here(kotlin.math.round(MyCar.LATITUDE * 10) / 10, kotlin.math.round(MyCar.LONGITUDE * 10) / 10)
+        if (!fine && !coarse) return home
+        val manager = ContextCompat.getSystemService(context, LocationManager::class.java) ?: return home
         return runCatching {
             manager.allProviders.mapNotNull { manager.getLastKnownLocation(it) }.maxByOrNull { it.time }
         // Redondeada a 0.1° (~10 km): para estaciones a 120 km sobra, y no se manda la ubicación exacta.
-        }.getOrNull()?.let { Here(kotlin.math.round(it.latitude * 10) / 10, kotlin.math.round(it.longitude * 10) / 10) }
+        }.getOrNull()?.let { Here(kotlin.math.round(it.latitude * 10) / 10, kotlin.math.round(it.longitude * 10) / 10) } ?: home
     }
 
     /** Estaciones a menos de [NEARBY_METERS] de [here], las más cercanas primero. */
@@ -104,7 +106,7 @@ object Radio {
             .sortedBy { it.distanceKm(here.latitude, here.longitude) ?: Double.MAX_VALUE }
 
     /** Las más escuchadas del país de la pantalla (cuando no hay ubicación). */
-    fun country(context: Context, code: String = Locale.getDefault().country): List<Station> =
+    fun country(context: Context, code: String = MyCar.COUNTRY): List<Station> =
         search(context, "countrycode=${encode(code)}&order=clickcount&reverse=true")
 
     /** Por nombre, en todo el mundo. */
