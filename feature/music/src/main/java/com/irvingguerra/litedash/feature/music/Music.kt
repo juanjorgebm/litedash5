@@ -79,6 +79,21 @@ private val GEELY_RADIO_APPS = listOf(
     "com.android.fmradio", "com.caf.fmradio", "com.qualcomm.fmradio", "com.mediatek.fmradio",
 )
 
+/** El reproductor "Música" de fábrica de la pantalla del Okavango (Neusoft): es el que de verdad suena. */
+const val CAR_MUSIC_APP = "com.neusoft.shockwave.Mutimedia"
+
+/** Apps de proyección (AutoKit, CarPlay, etc.): también publican sesión, pero no son la música del carro. */
+private val PROJECTION_WORDS = listOf("autokit", "zlink", "carlink", "carplay", "androidauto", "easyconn", "tlink", "phonelink", "carbit", "headunit")
+
+private fun isProjection(pkg: String) = pkg.lowercase().let { p -> PROJECTION_WORDS.any { it in p } }
+
+/** Orden al elegir sesión: primero la Música del carro, al final las de proyección. */
+private fun sessionRank(pkg: String) = when {
+    pkg == CAR_MUSIC_APP -> 0
+    isProjection(pkg) -> 2
+    else -> 1
+}
+
 /** Cuánto se espera a que la app despertada empiece a sonar antes de abrirla. */
 private const val WAKE_TIMEOUT_MS = 4_000L
 /** Tras abrir una radio sin control, cuánto se espera para regresar al inicio (y luego para anotar si sigue el audio). */
@@ -402,6 +417,10 @@ class MusicRepository(private val context: Context) {
         NotificationService.media = notifications
         loadSourceNotes()
         startTopWay()
+        // La Música de fábrica del Okavango es la app de música por defecto (y no AutoKit u otra de proyección).
+        if ((preferred == null || isProjection(preferred.orEmpty())) && runCatching { context.packageManager.getPackageInfo(CAR_MUSIC_APP, 0) }.isSuccess) {
+            choose(CAR_MUSIC_APP)
+        }
         // Mientras no haya radio enlazada se vuelve a buscar la de la pantalla en cada arranque.
         if (!store.getBoolean(KEY_SOURCES_GUESSED, false) || SourceKind.RADIO !in sourceApps) {
             store.edit().putBoolean(KEY_SOURCES_GUESSED, true).apply()
@@ -675,7 +694,7 @@ class MusicRepository(private val context: Context) {
         // Con app fija, solo esa (salvo el reproductor propio sonando). Si no: la que suena; si ninguna, la más reciente con canción
         // (Android las da en ese orden), para no quedarse con sesiones vacías.
         internal fun choose(all: List<MediaController>) {
-            val list = all.filter { accepts(it.packageName) }
+            val list = all.filter { accepts(it.packageName) }.sortedBy { sessionRank(it.packageName) }
             val p = fixed()
             val withTitle = list.filter { it.metadata.text(MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_TITLE).isNotEmpty() }
             // El reproductor propio sonando (o cargando) siempre se ve: lo puso a sonar el usuario.

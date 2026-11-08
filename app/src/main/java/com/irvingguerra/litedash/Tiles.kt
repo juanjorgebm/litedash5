@@ -103,7 +103,7 @@ val NAVIGATION_PACKAGES = arrayOf(
 
 // Apps de música que se sugieren en el dock si no eligió una (Spotify primero).
 val MUSIC_PACKAGES = arrayOf(
-    "com.spotify.music", "com.google.android.apps.youtube.music", "deezer.android.app",
+    "com.neusoft.shockwave.Mutimedia", "com.spotify.music", "com.google.android.apps.youtube.music", "deezer.android.app",
     "com.apple.android.music", "com.amazon.mp3",
 )
 
