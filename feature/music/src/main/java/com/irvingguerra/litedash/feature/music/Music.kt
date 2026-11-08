@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -68,6 +69,37 @@ private val SOURCE_WORDS = mapOf(
     SourceKind.RADIO to listOf("radio", "fm"),
 )
 
+/**
+ * Radios de fábrica de las pantallas Geely (ECARX/GKUI, como la del Okavango): se enlazan solas si
+ * están instaladas. Los nombres son los que usan esas pantallas; si la del auto usa otro, se busca
+ * cualquier app del sistema con "radio" en el paquete o el nombre.
+ */
+private val GEELY_RADIO_APPS = listOf(
+    "com.neusoft.shockwave.radio", // la "Radio" de fábrica del Okavango (Neusoft, RadioService)
+    "com.ecarx.radio", "com.ecarx.xui.radio", "com.ecarx.fmradio", "ecarx.radio",
+    "com.geely.radio", "com.geely.fmradio", "com.geely.gkui.radio", "com.gkui.radio",
+    "com.android.fmradio", "com.caf.fmradio", "com.qualcomm.fmradio", "com.mediatek.fmradio",
+)
+
+/** El reproductor "Música" de fábrica de la pantalla del Okavango (Neusoft): es el que de verdad suena. */
+const val CAR_MUSIC_APP = "com.neusoft.shockwave.Mutimedia"
+
+/** Apps de proyección (AutoKit, CarPlay, etc.): también publican sesión, pero no son la música del carro. */
+private val PROJECTION_WORDS = listOf("autokit", "zlink", "carlink", "carplay", "androidauto", "easyconn", "tlink", "phonelink", "carbit", "headunit")
+
+private fun isProjection(pkg: String) = pkg.lowercase().let { p -> PROJECTION_WORDS.any { it in p } }
+
+/** Orden al elegir sesión: primero la Música del carro, al final las de proyección. */
+private fun sessionRank(pkg: String) = when {
+    pkg == CAR_MUSIC_APP -> 0
+    isProjection(pkg) -> 2
+    else -> 1
+}
+
+/** La Radio de fábrica de la pantalla del Okavango (Neusoft). */
+const val CAR_RADIO_APP = "com.neusoft.shockwave.radio"
+private const val KEY_CAR_RADIO_LINKED = "car_radio_linked"
+
 /** Cuánto se espera a que la app despertada empiece a sonar antes de abrirla. */
 private const val WAKE_TIMEOUT_MS = 4_000L
 /** Tras abrir una radio sin control, cuánto se espera para regresar al inicio (y luego para anotar si sigue el audio). */
@@ -109,7 +141,7 @@ private val BRAND_BT_APPS = listOf(
  * música está en pantalla ([use]/[release] cuentan cuántas): nada de polling.
  */
 class MusicRepository(private val context: Context) {
-    private val sessionManager = context.getSystemService(MediaSessionManager::class.java)
+    private val sessionManager = ContextCompat.getSystemService(context, MediaSessionManager::class.java)!!
     private val component = ComponentName(context, NotificationService::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var users = 0
@@ -294,7 +326,7 @@ class MusicRepository(private val context: Context) {
 
     fun hasPermission(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            context.getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(component)
+            ContextCompat.getSystemService(context, NotificationManager::class.java)!!.isNotificationListenerAccessGranted(component)
         } else {
             Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
                 ?.contains(component.flattenToString()) == true
@@ -391,7 +423,12 @@ class MusicRepository(private val context: Context) {
         NotificationService.media = notifications
         loadSourceNotes()
         startTopWay()
-        if (!store.getBoolean(KEY_SOURCES_GUESSED, false)) {
+        // La Música de fábrica del Okavango es la app de música por defecto (y no AutoKit u otra de proyección).
+        if ((preferred == null || isProjection(preferred.orEmpty())) && runCatching { context.packageManager.getPackageInfo(CAR_MUSIC_APP, 0) }.isSuccess) {
+            choose(CAR_MUSIC_APP)
+        }
+        // Mientras no haya radio enlazada se vuelve a buscar la de la pantalla en cada arranque.
+        if (!store.getBoolean(KEY_SOURCES_GUESSED, false) || SourceKind.RADIO !in sourceApps) {
             store.edit().putBoolean(KEY_SOURCES_GUESSED, true).apply()
             Thread(::guessSources, "music-sources").start()
         }
@@ -663,7 +700,7 @@ class MusicRepository(private val context: Context) {
         // Con app fija, solo esa (salvo el reproductor propio sonando). Si no: la que suena; si ninguna, la más reciente con canción
         // (Android las da en ese orden), para no quedarse con sesiones vacías.
         internal fun choose(all: List<MediaController>) {
-            val list = all.filter { accepts(it.packageName) }
+            val list = all.filter { accepts(it.packageName) }.sortedBy { sessionRank(it.packageName) }
             val p = fixed()
             val withTitle = list.filter { it.metadata.text(MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_TITLE).isNotEmpty() }
             // El reproductor propio sonando (o cargando) siempre se ve: lo puso a sonar el usuario.
@@ -849,6 +886,13 @@ class MusicRepository(private val context: Context) {
          * apps de fábrica no hacen nada); y LiteDash recuerda que lo mandó ([assume]).
          */
         fun toggle() {
+            if (carMusicBlind(this)) {
+                // Sin estado que leer: se supone lo último que se mandó (o que Android oye música sonando).
+                val pause = carMusicPlaying || musicActive()
+                carMusicPlaying = !pause
+                if (!carCommand(this, if (pause) "pause" else "play") && !pause) open(CAR_MUSIC_APP)
+                return
+            }
             val s = song ?: return onWake()
             topWayFor(this)?.let { tw ->
                 if (!s.playing) return onWake()
@@ -875,11 +919,15 @@ class MusicRepository(private val context: Context) {
          * teclas (casi siempre la estación guardada que sigue o buscar la siguiente).
          */
         fun next() {
+            if (carCommand(this, "next")) return
+            if (carMusicBlind(this)) return resume()
             topWayFor(this)?.let { trace("topway siguiente"); return it.next() }
             controller?.transportControls?.takeUnless { song?.blind == true || keysOnly(PlaybackState.ACTION_SKIP_TO_NEXT) }?.skipToNext() ?: press(this, KeyEvent.KEYCODE_MEDIA_NEXT)
         }
 
         fun previous() {
+            if (carCommand(this, "pre")) return
+            if (carMusicBlind(this)) return resume()
             topWayFor(this)?.let { trace("topway anterior"); return it.previous() }
             controller?.transportControls?.takeUnless { song?.blind == true || keysOnly(PlaybackState.ACTION_SKIP_TO_PREVIOUS) }?.skipToPrevious() ?: press(this, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
         }
@@ -990,6 +1038,14 @@ class MusicRepository(private val context: Context) {
         }
         if (pkg == null) return systemPlay()
         if (isOwn(pkg)) return ownPlay?.invoke(SourceKind.USB) {} ?: Unit
+        // La Música de fábrica del Okavango no publica sesión de Android, pero atiende por broadcast
+        // los mismos comandos que su asistente de voz (play, pausa, siguiente, anterior): [carCommand].
+        if (pkg == CAR_MUSIC_APP) {
+            carMusicPlaying = true
+            music.starting = null
+            if (!carCommand(music, "play")) open(pkg)
+            return
+        }
         watchPlay(pkg)
         wake(pkg, music)
     }
@@ -1138,7 +1194,7 @@ class MusicRepository(private val context: Context) {
         mainHandler.removeCallbacks(returnAndPlay)
     }
 
-    private fun musicActive() = context.getSystemService(AudioManager::class.java).isMusicActive
+    private fun musicActive() = ContextCompat.getSystemService(context, AudioManager::class.java)!!.isMusicActive
 
     /**
      * FYT (pantallas cuyo MCU elige la fuente de audio): dar play al celular por AVRCP no basta,
@@ -1173,6 +1229,32 @@ class MusicRepository(private val context: Context) {
      * el reproductor propio: ahí el sistema la llevaría a otra app (y podría arrancar Spotify).
      * False = no hubo a quién.
      */
+    private var carMusicPlaying = false
+
+    /**
+     * Comandos por broadcast a las apps de fábrica del Okavango (los mismos de su asistente de voz, vistos en sus
+     * APK): Música = `com.vrmms.intent.MEDIACONTROL` con `media-play-operate` = play | pause | next | pre (solo si su
+     * reproductor está activo); Radio = `com.vrmms.intent.RADIO` con `operate=radio_operate` y `radio-play-operate`
+     * = radio-next | radio-pre (solo con la radio abierta). True si se mandó.
+     */
+    private fun carCommand(lens: Lens, cmd: String): Boolean {
+        val pkg = target(lens)
+        val intent = when {
+            lens !== radio && pkg == CAR_MUSIC_APP && lens.controller?.packageName != CAR_MUSIC_APP ->
+                Intent("com.vrmms.intent.MEDIACONTROL").putExtra("media-play-operate", cmd)
+            lens === radio && pkg == CAR_RADIO_APP && (cmd == "next" || cmd == "pre") ->
+                Intent("com.vrmms.intent.RADIO").putExtra("operate", "radio_operate")
+                    .putExtra("radio-play-operate", if (cmd == "next") "radio-next" else "radio-pre")
+            else -> return false
+        }
+        trace("comando al carro: ${intent.action} $cmd")
+        return runCatching { context.sendBroadcast(intent.setPackage(pkg)) }.isSuccess
+    }
+
+    /** ¿La pieza apunta a la Música de fábrica del carro sin sesión? Ahí no hay cómo mandar teclas. */
+    private fun carMusicBlind(lens: Lens): Boolean =
+        lens !== radio && target(lens) == CAR_MUSIC_APP && lens.controller?.packageName != CAR_MUSIC_APP
+
     private fun press(lens: Lens, code: Int): Boolean {
         val pkg = target(lens)
         val receiver = keyReceiver(pkg)
@@ -1204,7 +1286,7 @@ class MusicRepository(private val context: Context) {
     /** La pieza Radio sin sesión pero con una FM de la pantalla que atiende teclas: lleva anterior/siguiente. */
     fun radioHasKeys(): Boolean {
         val pkg = appFor(SourceKind.RADIO) ?: return false
-        return !isOwn(pkg) && keyReceiver(pkg) != null
+        return !isOwn(pkg) && (keyReceiver(pkg) != null || pkg == CAR_RADIO_APP)
     }
 
     /** El servicio de música (MediaBrowserService) de [pkg]; null si no ofrece. */
@@ -1289,9 +1371,34 @@ class MusicRepository(private val context: Context) {
         val candidates = systemPlayers().filter { it in launchable }.map { pkg -> pkg to tokens(pkg, appLabel(pkg)) }
         val found = SOURCE_WORDS.mapNotNull { (kind, words) ->
             candidates.filter { (_, t) -> words.any { it in t } }.singleOrNull()?.let { kind to it.first }
-        }.toMap()
+        }.toMap().toMutableMap()
+        if (SourceKind.RADIO !in found) guessRadio(launchable)?.let { found[SourceKind.RADIO] = it }
+        // Una sola vez: la Radio de fábrica del Okavango manda sobre una radio adivinada antes (otra app).
+        val carRadio = CAR_RADIO_APP.takeIf { it in launchable && !store.getBoolean(KEY_CAR_RADIO_LINKED, false) }
+        if (carRadio != null) found[SourceKind.RADIO] = carRadio
         if (found.isEmpty()) return
-        mainHandler.post { for ((kind, pkg) in found) if (kind !in sourceApps) setSource(kind, pkg) }
+        mainHandler.post {
+            for ((kind, pkg) in found) if (kind !in sourceApps || (pkg == carRadio && sourceApps[kind] != pkg)) setSource(kind, pkg)
+            if (carRadio != null) store.edit().putBoolean(KEY_CAR_RADIO_LINKED, true).apply()
+        }
+    }
+
+    /**
+     * La radio de la pantalla aunque no atienda el botón de play: primero las de Geely conocidas;
+     * si no, la única app del sistema que se pueda abrir con "radio" (o "fm") en el paquete o el nombre.
+     */
+    private fun guessRadio(launchable: Set<String>): String? {
+        GEELY_RADIO_APPS.firstOrNull { it in launchable }?.let { return it }
+        val pm = context.packageManager
+        val system = launchable.filter { pkg ->
+            pkg != context.packageName && runCatching { pm.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_SYSTEM != 0 }.getOrDefault(false)
+        }
+        val withRadio = system.filter { "radio" in tokens(it, appLabel(it)) || it.lowercase().contains("radio") }
+        withRadio.singleOrNull()?.let { return it }
+        // Varias: la que lo dice en el paquete (no solo en el nombre visible).
+        withRadio.filter { it.lowercase().contains("radio") }.singleOrNull()?.let { return it }
+        if (withRadio.isNotEmpty()) return null
+        return system.filter { "fm" in tokens(it, appLabel(it)) }.singleOrNull()
     }
 
     /** Palabras sueltas del paquete y del nombre, en minúsculas ("com.syu.bt" → com, syu, bt). */
@@ -1310,11 +1417,52 @@ class MusicRepository(private val context: Context) {
 
     /** Para los reportes: qué Bluetooth trae la pantalla y qué apps de marca, para saber su familia. */
     private fun describeBluetooth(): String = buildString {
-        val adapter = runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter }.getOrNull()
+        val adapter = runCatching { ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter }.getOrNull()
         val service = bluetoothService
         appendLine("Bluetooth de Android: AVRCP=${service?.let { "${it.packageName}/${it.name}" } ?: "no"}; adaptador=${adapter?.let { if (it.isEnabled) "encendido" else "apagado" } ?: "no"}")
         val brand = BRAND_BT_APPS.filter { runCatching { context.packageManager.getPackageInfo(it, 0) }.isSuccess }
         appendLine("Apps de Bluetooth de marca: ${brand.joinToString().ifBlank { "ninguna" }}")
+    }
+
+    /**
+     * Pistas dentro de la app [pkg] (se lee su APK, que Android deja leer): textos de su manifiesto y de su
+     * código que parecen acciones de música ("...ACTION.NEXT", "com.neusoft...play"). Es lento: fuera del hilo principal.
+     */
+    fun apkHints(pkg: String = preferred ?: CAR_MUSIC_APP): String = runCatching {
+        val path = context.packageManager.getApplicationInfo(pkg, 0).sourceDir
+        val found = java.util.TreeSet<String>()
+        val interesting = Regex("(?i)(neusoft|shockwave|mutimedia|mengjia|action|broadcast|media_button|android\\.intent)[\\w.$:/-]{3,}")
+        val keywords = Regex("(?i)(play|pause|next|prev|music|media|source|usb|song|track|key|audio)")
+        java.util.zip.ZipFile(path).use { zip ->
+            for (name in listOf("AndroidManifest.xml", "classes.dex", "classes2.dex")) {
+                val entry = zip.getEntry(name) ?: continue
+                var bytes = zip.getInputStream(entry).use { it.readBytes() }
+                // El manifiesto guarda los textos en UTF-16: se quitan los ceros para leerlos como ASCII.
+                if (name.endsWith(".xml")) bytes = bytes.filter { it != 0.toByte() }.toByteArray()
+                val text = String(bytes, Charsets.ISO_8859_1)
+                for (m in interesting.findAll(text)) {
+                    val v = m.value
+                    if (v.length in 8..90 && keywords.containsMatchIn(v) && !v.startsWith("androidx") && !v.contains("Landroid")) found += v
+                }
+            }
+        }
+        if (found.isEmpty()) "Sin pistas en $pkg" else "Pistas en $pkg (${found.size}):\n" + found.take(70).joinToString("\n") { "  $it" }
+    }.getOrElse { "No se pudo leer la app: ${it.javaClass.simpleName}" }
+
+    /**
+     * Para ver en pantalla (Ajustes → Música → Diagnóstico): lo mismo que [describe] y los servicios y
+     * receptores de la app de música elegida, para saber por dónde se le puede hablar.
+     */
+    fun diagnostic(): String = buildString {
+        append(describe())
+        val pkg = preferred ?: CAR_MUSIC_APP
+        runCatching {
+            @Suppress("DEPRECATION")
+            val info = context.packageManager.getPackageInfo(pkg, PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS)
+            appendLine("Componentes de $pkg:")
+            info.services.orEmpty().forEach { appendLine("  servicio ${it.name.substringAfterLast('.')}${if (it.exported) " (público)" else ""}") }
+            info.receivers.orEmpty().forEach { appendLine("  receptor ${it.name.substringAfterLast('.')}${if (it.exported) " (público)" else ""}") }
+        }.onFailure { appendLine("Componentes de $pkg: no se pudieron leer") }
     }
 
     /**
@@ -1361,7 +1509,7 @@ class MusicRepository(private val context: Context) {
                     (lens.assumedPkg?.let { "; supone $it" } ?: ""),
             )
         }
-        appendLine("Audio sonando en Android: ${yes(context.getSystemService(AudioManager::class.java).isMusicActive)}")
+        appendLine("Audio sonando en Android: ${yes(ContextCompat.getSystemService(context, AudioManager::class.java)!!.isMusicActive)}")
         if (TopWayRadio.available) {
             val tw = topWay
             appendLine(

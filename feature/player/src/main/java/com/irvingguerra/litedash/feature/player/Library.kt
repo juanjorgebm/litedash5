@@ -13,6 +13,7 @@ import androidx.core.net.toUri
 import java.io.File
 import com.irvingguerra.litedash.feature.music.Drive
 import com.irvingguerra.litedash.feature.music.Drives
+import androidx.core.content.ContextCompat
 
 /** Una canción de la memoria (dos con los mismos datos son la misma: tocar USB otra vez no la reinicia). */
 data class Track(
@@ -41,7 +42,7 @@ object Library {
     val permission: String
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
 
-    fun hasPermission(context: Context) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    fun hasPermission(context: Context) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     /** El permiso del aviso del reproductor, que solo existe desde Android 13. */
     val noticePermission: List<String>

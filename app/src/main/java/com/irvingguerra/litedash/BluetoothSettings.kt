@@ -48,7 +48,7 @@ import com.irvingguerra.litedash.feature.music.SourceKind
 fun BluetoothSettings(d: Dependencies) {
     val context = LocalContext.current
     val c = LocalColors.current
-    val adapter = remember { context.getSystemService(BluetoothManager::class.java)?.adapter }
+    val adapter = remember { ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter }
 
     // Sin el Bluetooth de Android (o sin el perfil de música AVRCP): vincula desde su propia app.
     if (adapter == null || !d.music.bluetoothBuiltIn) {

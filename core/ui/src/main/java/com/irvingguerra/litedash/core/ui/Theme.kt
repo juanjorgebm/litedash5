@@ -31,6 +31,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
@@ -38,6 +40,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,11 +53,15 @@ import androidx.compose.ui.unit.sp
 // Colores de la marca (los mismos de brand/logo).
 object Brand {
     val LightWhite = Color(0xFFF4F6F8)
-    val Amber = Color(0xFFFFB224)
+    val Amber = Color(0xFFFFB547)
 }
 
+/** Diseño Okavango: fondo grafito y tarjetas de gris pizarra a negro carbón, con la luz de arriba a la izquierda. */
+val Slate = Color(0xFF343B45)
+val Coal = Color(0xFF171B21)
+
 /** Colores que se repiten entre los temas: tinta (fondo oscuro), tinta y papel del claro, y su ámbar. */
-private val Ink = Color(0xFF0E1013)
+private val Ink = Color(0xFF0C0E11)
 private val LightInk = Color(0xFF16181C)
 private val LightPaper = Color(0xFFE9ECF0)
 private val LightAmber = Color(0xFFE59500)
@@ -104,16 +112,17 @@ private fun contrast(a: Color, b: Color): Float {
 val DarkColors = Colors(
     dark = true,
     background = Ink,
-    surface = Color(0xFF1A1D22),
-    surfaceHigh = Color(0xFF262A31),
-    line = Color(0xFF2A2F37),
-    text = Brand.LightWhite,
-    textMuted = Color(0xFF8B939E),
+    surface = Color(0xFF232930),
+    surfaceHigh = Color(0xFF2F363F),
+    line = Color(0xFF3A424D),
+    text = Color.White,
+    textMuted = Color(0xFFA9B2BD),
     accent = Brand.Amber,
     danger = Color(0xFFFF6B5E),
     warning = Brand.Amber,
-    primary = Brand.LightWhite,
-    onPrimary = Ink,
+    // Los botones activos y lo principal van en ámbar con tinta encima.
+    primary = Brand.Amber,
+    onPrimary = Color(0xFF2B1A05),
 )
 
 val LightColors = Colors(
@@ -136,9 +145,9 @@ val LocalColors = staticCompositionLocalOf { DarkColors }
 /** Esquinas: moderadas (Irving pidió menos redondeado que la propuesta). */
 object Radius {
     /** Tarjetas del tablero y de Ajustes. */
-    val card = 14.dp
+    val card = 28.dp
     /** Cosas dentro de una tarjeta: portadas, botones, campos, filas. */
-    val inner = 10.dp
+    val inner = 16.dp
     /** Detalles chicos (barras, indicadores). */
     val small = 6.dp
 }
@@ -158,12 +167,23 @@ fun LiteDashTheme(dark: Boolean = true, scale: Float = 1f, accent: Color? = null
     )
 }
 
+/**
+ * Inter, incluida en la app: la fuente de algunas pantallas con Android 5 no trae las tildes ni el
+ * ° en negritas (salían cuadritos). Con acentos y símbolos de Latin, ya recortada.
+ */
+val Inter = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
+
 object Typography {
-    val clock = TextStyle(fontSize = 56.sp, fontWeight = FontWeight.Medium, letterSpacing = (-1).sp)
-    val title = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-    val subtitle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium)
-    val body = TextStyle(fontSize = 16.sp)
-    val small = TextStyle(fontSize = 13.sp)
+    // Más grandes que antes: se leen desde el asiento del conductor.
+    val clock = TextStyle(fontSize = 64.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-1).sp)
+    val title = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold)
+    val subtitle = TextStyle(fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+    val body = TextStyle(fontSize = 18.sp)
+    val small = TextStyle(fontSize = 15.sp)
     val label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
 }
 
@@ -177,8 +197,11 @@ fun Label(
     maxLines: Int = Int.MAX_VALUE,
     modifier: Modifier = Modifier,
 ) {
-    BasicText(text, modifier, style = style.copy(color = color), maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    BasicText(text, modifier, style = style.copy(color = color, fontFamily = style.fontFamily ?: Inter), maxLines = maxLines, overflow = TextOverflow.Ellipsis)
 }
+
+private val CardBrush = Brush.linearGradient(listOf(Slate, Color(0xFF272D36), Coal))
+private val CardEdge = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.05f)))
 
 /** La pieza del tablero va sin fondo de tarjeta: [Card] queda transparente (lo de adentro se ve igual). */
 val LocalPlainCard = compositionLocalOf { false }
@@ -192,7 +215,19 @@ fun Card(
 ) {
     val c = LocalColors.current
     val shape = RoundedCornerShape(Radius.card)
-    var m = modifier.clip(shape).background(if (LocalPlainCard.current) Color.Transparent else c.surface)
+    val plain = LocalPlainCard.current
+    var m = modifier
+    if (!plain && c.dark) {
+        // Relieve: sombra que levanta la tarjeta, degradado pizarra → carbón y un borde fino
+        // más claro arriba (la luz viene de arriba a la izquierda).
+        m = m
+            .shadow(8.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .clip(shape)
+            .background(CardBrush)
+            .border(1.dp, CardEdge, shape)
+    } else {
+        m = m.clip(shape).background(if (plain) Color.Transparent else c.surface)
+    }
     if (onClick != null) m = m.clickable(onClick = onClick)
     Box(m, content = content)
 }
