@@ -48,6 +48,7 @@ public class ReverseWatchActivity extends Activity {
     private Map<String, String> lastProps = new HashMap<>();
     private Map<String, String> lastSwitches = new HashMap<>();
     private Map<String, String> lastProcs = new HashMap<>();
+    private Map<String, String> lastImportance = new HashMap<>();
     private boolean running = true;
     private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
 
@@ -68,7 +69,7 @@ public class ReverseWatchActivity extends Activity {
         TextView title = new TextView(this);
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        title.setText("Monitor de reversa (sin cámara). Mete reversa, espera 5 s, quítala, y vuelve aquí.");
+        title.setText("Monitor de reversa v1.6: mete reversa 5 s, quítala 5 s, y repite una vez más.");
         root.addView(title);
         ScrollView sv = new ScrollView(this);
         log = new TextView(this);
@@ -91,6 +92,8 @@ public class ReverseWatchActivity extends Activity {
                 lastProps = readProps();
                 lastSwitches = readSwitches();
                 lastProcs = readProcs();
+                lastImportance = readImportance();
+                for (Map.Entry<String, String> e : lastImportance.entrySet()) add("app " + e.getKey() + " = " + e.getValue());
                 add("Inicio: " + lastProps.size() + " propiedades, " + lastSwitches.size()
                         + " switches, " + lastProcs.size() + " procesos. Esperando cambios…");
                 for (Map.Entry<String, String> e : lastSwitches.entrySet()) add("switch " + e.getKey() + " = " + e.getValue());
@@ -106,6 +109,7 @@ public class ReverseWatchActivity extends Activity {
                 diff("prop", lastProps, lastProps = readProps());
                 diff("switch", lastSwitches, lastSwitches = readSwitches());
                 diff("proceso", lastProcs, lastProcs = readProcs());
+                diff("app", lastImportance, lastImportance = readImportance());
             } catch (Throwable t) {
                 add("ERROR " + t);
             }
@@ -174,6 +178,26 @@ public class ReverseWatchActivity extends Activity {
             cmd = cmd.replace('\0', ' ').trim();
             if (cmd.isEmpty()) continue;
             m.put(cmd, "vivo");
+        }
+        return m;
+    }
+
+    /** Prioridad de las apps del fabricante (en Android 5.1.0 se ven todas): primer plano, visible, fondo… */
+    private Map<String, String> readImportance() {
+        Map<String, String> m = new HashMap<>();
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            for (android.app.ActivityManager.RunningAppProcessInfo p : am.getRunningAppProcesses()) {
+                String n = p.processName;
+                if (!(n.contains("neusoft") || n.contains("ecarx") || n.contains("avm") || n.contains("rvc")
+                        || n.contains("cam") || n.contains("launcher") || n.contains("systemui"))) continue;
+                String imp = p.importance == 100 ? "PRIMER_PLANO" : p.importance == 200 ? "visible"
+                        : p.importance == 300 ? "servicio" : p.importance == 400 ? "fondo" : String.valueOf(p.importance);
+                String adj = readLine(new File("/proc/" + p.pid + "/oom_score_adj"));
+                m.put(n, imp + (adj != null ? " adj " + adj : ""));
+            }
+        } catch (Throwable t) {
+            m.put("error", String.valueOf(t));
         }
         return m;
     }
