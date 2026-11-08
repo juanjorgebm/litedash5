@@ -10,6 +10,7 @@ import android.content.IntentFilter
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,8 +81,14 @@ fun BluetoothToggleTile() {
     }
 }
 
+/**
+ * Abre el ajuste del sistema; si la pantalla no trae esa pantalla de ajustes (algunas de carro la quitan),
+ * prueba los ajustes inalámbricos y la app de Ajustes, y si nada abre, avisa en vez de quedarse callada.
+ */
 private fun openSettings(context: Context, action: String) {
-    runCatching { context.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    val tries = listOf(Intent(action), Intent(Settings.ACTION_WIRELESS_SETTINGS), Intent(Settings.ACTION_SETTINGS))
+    val opened = tries.any { runCatching { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess }
+    if (!opened) Toast.makeText(context, R.string.toggle_blocked, Toast.LENGTH_LONG).show()
 }
 
 /** Escucha [action] del sistema mientras el widget se ve. */
