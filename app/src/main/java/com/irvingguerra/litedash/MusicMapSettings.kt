@@ -79,6 +79,13 @@ fun MusicSettings(d: Dependencies) {
             }
         }, primary = hints != null)
     }
+    val context = LocalContext.current
+    var exported by remember { mutableStateOf<String?>(null) }
+    Button("Copiar apps del carro a Descargas", {
+        exported = "Copiando…"
+        scope.launch { exported = withContext(Dispatchers.IO) { exportCarApps(context) } }
+    })
+    exported?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
     diagnostic?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
     hints?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
 }
@@ -225,4 +232,28 @@ fun MapSettings(d: Dependencies) {
         Typography.small,
         LocalColors.current.textMuted,
     )
+}
+
+/** Las apps de fábrica de Música, Radio y Teléfono del Okavango, para copiarlas y analizarlas. */
+private val CAR_APPS = listOf("com.neusoft.shockwave.Mutimedia", "com.neusoft.shockwave.radio", "bt.ecarxtestn.com.btphoneapp")
+
+/** Copia el APK de cada una a Descargas/litedash-apks; devuelve qué se pudo copiar. */
+@Suppress("DEPRECATION")
+private fun exportCarApps(context: android.content.Context): String {
+    val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "litedash-apks")
+    return runCatching {
+        dir.mkdirs()
+        buildString {
+            appendLine("Carpeta: ${dir.absolutePath}")
+            for (pkg in CAR_APPS) {
+                val result = runCatching {
+                    val src = java.io.File(context.packageManager.getApplicationInfo(pkg, 0).sourceDir)
+                    val dst = java.io.File(dir, "$pkg.apk")
+                    src.inputStream().use { i -> dst.outputStream().use { o -> i.copyTo(o) } }
+                    "${dst.length() / 1024} KB"
+                }.getOrElse { "no se pudo (${it.javaClass.simpleName})" }
+                appendLine("  $pkg: $result")
+            }
+        }
+    }.getOrElse { "No se pudo crear la carpeta: ${it.javaClass.simpleName}" }
 }

@@ -29,6 +29,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Viaje (velocímetro): GPS, solo si agregas la pieza y mientras se ve. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Solo para copiar las apps del carro a Descargas (Investigar app del carro): Android 5 a 9. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <!-- Escáner OBD por cable USB (opcional: también va por Bluetooth o Wi-Fi). -->
