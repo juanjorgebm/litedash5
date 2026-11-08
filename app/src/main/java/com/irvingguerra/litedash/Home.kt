@@ -844,37 +844,36 @@ private fun Rail(
         Column(
             Modifier.fillMaxSize().padding(vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceEvenly,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            RailButton(Icons.home, stringResource(R.string.home), active == null, onHome)
-            RailButton(Icons.phoneCar, stringResource(R.string.rail_projection), false, onProjection)
-            RailButton(Icons.music, stringResource(R.string.tile_music), active == Expanded.MUSIC, onMusic)
-            RailButton(Icons.radio, stringResource(R.string.tile_radio), active == Expanded.RADIO, onRadio)
-            RailButton(Icons.phone, stringResource(R.string.tile_phone), false, onPhone)
-            RailButton(Icons.apps, stringResource(R.string.apps), false, onApps)
-            RailButton(Icons.settings, stringResource(R.string.rail_settings), false, onSettings)
+            RailButton(Icons.home, stringResource(R.string.home), active == null, onHome, Modifier.weight(1f))
+            RailButton(Icons.phoneCar, stringResource(R.string.rail_projection), false, onProjection, Modifier.weight(1f))
+            RailButton(Icons.music, stringResource(R.string.tile_music), active == Expanded.MUSIC, onMusic, Modifier.weight(1f))
+            RailButton(Icons.radio, stringResource(R.string.tile_radio), active == Expanded.RADIO, onRadio, Modifier.weight(1f))
+            RailButton(Icons.phone, stringResource(R.string.tile_phone), false, onPhone, Modifier.weight(1f))
+            RailButton(Icons.apps, stringResource(R.string.apps), false, onApps, Modifier.weight(1f))
+            RailButton(Icons.settings, stringResource(R.string.rail_settings), false, onSettings, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun RailButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+private fun RailButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val c = LocalColors.current
     val shape = RoundedCornerShape(Radius.inner)
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .padding(horizontal = 6.dp)
             .clip(shape)
             .background(if (on) c.accent else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
         val tint = if (on) c.onPrimary else c.text
-        Icon(icon, tint, 30.dp)
-        Label(label, Typography.small, tint, maxLines = 1)
+        Icon(icon, tint, 26.dp)
+        Label(label, Typography.small.copy(fontSize = 12.sp), tint, maxLines = 1)
     }
 }
 
