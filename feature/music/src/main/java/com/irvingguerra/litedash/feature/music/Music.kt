@@ -886,6 +886,13 @@ class MusicRepository(private val context: Context) {
          * apps de fábrica no hacen nada); y LiteDash recuerda que lo mandó ([assume]).
          */
         fun toggle() {
+            if (carMusicBlind(this)) {
+                // Sin estado que leer: se supone lo último que se mandó (o que Android oye música sonando).
+                val pause = carMusicPlaying || musicActive()
+                carMusicPlaying = !pause
+                if (!carCommand(this, if (pause) "pause" else "play") && !pause) open(CAR_MUSIC_APP)
+                return
+            }
             val s = song ?: return onWake()
             topWayFor(this)?.let { tw ->
                 if (!s.playing) return onWake()
@@ -912,12 +919,14 @@ class MusicRepository(private val context: Context) {
          * teclas (casi siempre la estación guardada que sigue o buscar la siguiente).
          */
         fun next() {
+            if (carCommand(this, "next")) return
             if (carMusicBlind(this)) return resume()
             topWayFor(this)?.let { trace("topway siguiente"); return it.next() }
             controller?.transportControls?.takeUnless { song?.blind == true || keysOnly(PlaybackState.ACTION_SKIP_TO_NEXT) }?.skipToNext() ?: press(this, KeyEvent.KEYCODE_MEDIA_NEXT)
         }
 
         fun previous() {
+            if (carCommand(this, "pre")) return
             if (carMusicBlind(this)) return resume()
             topWayFor(this)?.let { trace("topway anterior"); return it.previous() }
             controller?.transportControls?.takeUnless { song?.blind == true || keysOnly(PlaybackState.ACTION_SKIP_TO_PREVIOUS) }?.skipToPrevious() ?: press(this, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
@@ -1029,12 +1038,12 @@ class MusicRepository(private val context: Context) {
         }
         if (pkg == null) return systemPlay()
         if (isOwn(pkg)) return ownPlay?.invoke(SourceKind.USB) {} ?: Unit
-        // La Música de fábrica del Okavango no publica sesión, receptor ni servicio de música: no hay cómo
-        // darle play ni leer su canción desde fuera. Se abre su pantalla (sin abrir y regresar en bucle).
+        // La Música de fábrica del Okavango no publica sesión de Android, pero atiende por broadcast
+        // los mismos comandos que su asistente de voz (play, pausa, siguiente, anterior): [carCommand].
         if (pkg == CAR_MUSIC_APP) {
-            trace("música del carro: sin control externo, se abre $pkg")
+            carMusicPlaying = true
             music.starting = null
-            open(pkg)
+            if (!carCommand(music, "play")) open(pkg)
             return
         }
         watchPlay(pkg)
@@ -1220,6 +1229,28 @@ class MusicRepository(private val context: Context) {
      * el reproductor propio: ahí el sistema la llevaría a otra app (y podría arrancar Spotify).
      * False = no hubo a quién.
      */
+    private var carMusicPlaying = false
+
+    /**
+     * Comandos por broadcast a las apps de fábrica del Okavango (los mismos de su asistente de voz, vistos en sus
+     * APK): Música = `com.vrmms.intent.MEDIACONTROL` con `media-play-operate` = play | pause | next | pre (solo si su
+     * reproductor está activo); Radio = `com.vrmms.intent.RADIO` con `operate=radio_operate` y `radio-play-operate`
+     * = radio-next | radio-pre (solo con la radio abierta). True si se mandó.
+     */
+    private fun carCommand(lens: Lens, cmd: String): Boolean {
+        val pkg = target(lens)
+        val intent = when {
+            lens !== radio && pkg == CAR_MUSIC_APP && lens.controller?.packageName != CAR_MUSIC_APP ->
+                Intent("com.vrmms.intent.MEDIACONTROL").putExtra("media-play-operate", cmd)
+            lens === radio && pkg == CAR_RADIO_APP && (cmd == "next" || cmd == "pre") ->
+                Intent("com.vrmms.intent.RADIO").putExtra("operate", "radio_operate")
+                    .putExtra("radio-play-operate", if (cmd == "next") "radio-next" else "radio-pre")
+            else -> return false
+        }
+        trace("comando al carro: ${intent.action} $cmd")
+        return runCatching { context.sendBroadcast(intent.setPackage(pkg)) }.isSuccess
+    }
+
     /** ¿La pieza apunta a la Música de fábrica del carro sin sesión? Ahí no hay cómo mandar teclas. */
     private fun carMusicBlind(lens: Lens): Boolean =
         lens !== radio && target(lens) == CAR_MUSIC_APP && lens.controller?.packageName != CAR_MUSIC_APP
@@ -1255,7 +1286,7 @@ class MusicRepository(private val context: Context) {
     /** La pieza Radio sin sesión pero con una FM de la pantalla que atiende teclas: lleva anterior/siguiente. */
     fun radioHasKeys(): Boolean {
         val pkg = appFor(SourceKind.RADIO) ?: return false
-        return !isOwn(pkg) && keyReceiver(pkg) != null
+        return !isOwn(pkg) && (keyReceiver(pkg) != null || pkg == CAR_RADIO_APP)
     }
 
     /** El servicio de música (MediaBrowserService) de [pkg]; null si no ofrece. */
