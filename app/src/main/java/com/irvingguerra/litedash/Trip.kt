@@ -108,6 +108,8 @@ class TripRepository(private val context: Context, private val bus: VehicleBus) 
         }
     }
 
+    // Android 5 pide el permiso también para dejar de escuchar; si no lo hay, no se escuchaba y runCatching lo cubre.
+    @SuppressLint("MissingPermission")
     fun release() {
         users = (users - 1).coerceAtLeast(0)
         if (users == 0) {
