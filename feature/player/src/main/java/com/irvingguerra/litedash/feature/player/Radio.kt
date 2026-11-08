@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import android.security.NetworkSecurityPolicy
 import com.irvingguerra.litedash.core.ui.Https
 import org.json.JSONArray
@@ -158,7 +159,8 @@ object Radio {
         val out = ArrayList<Station>(array.length())
         val seen = HashSet<String>()
         // Si Android no deja tráfico sin cifrar (lo normal desde la 9), las http:// no sonarían: no se listan.
-        val cleartext = NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted
+        // Android 5 no tiene esa política: ahí siempre se permite.
+        val cleartext = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted
         for (i in 0 until array.length()) {
             val o = array.optJSONObject(i) ?: continue
             val url = o.optString("url_resolved").ifBlank { o.optString("url") }.ifBlank { continue }

@@ -24,7 +24,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Compilar, lint y pruebas
-        run: ./gradlew assemblePlayDebug assembleGithubRelease :benchmark:assembleBenchmark lint test --console=plain
+        run: ./gradlew assemblePlayDebug assembleGithubRelease :benchmark:assembleBenchmark lint test --continue --console=plain
 
       - name: Presupuesto de tamaño
         run: |
@@ -41,6 +41,10 @@ jobs:
         with:
           name: litedash-apk
           path: app/build/outputs/apk/github/release/app-github-release.apk
+
+      - name: Errores de lint en el log
+        if: failure()
+        run: find . -path '*lint_intermediate_text_report*' -name '*.txt' -exec sh -c 'echo "== $1"; cat "$1"' _ {} \;
 
       - name: Reportes de lint
         if: failure()
