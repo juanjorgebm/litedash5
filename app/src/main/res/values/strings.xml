@@ -29,6 +29,7 @@
     <string name="templates">Plantillas</string>
     <string name="templates_help">Elige un punto de partida. Después mueve y cambia el tamaño de lo que quieras.</string>
     <string name="template_center">Auto al centro</string>
+    <string name="template_okavango">Okavango</string>
     <string name="template_side">Auto a un lado</string>
     <string name="template_vertical">Vertical</string>
     <string name="template_speed">Solo velocímetro</string>
@@ -447,6 +448,18 @@
     <string name="tile_bluetooth">Bluetooth</string>
     <string name="tile_bluetooth_help">Enciende y apaga el Bluetooth con un toque</string>
     <string name="toggle_on">Encendido</string>
+    <string name="tile_favorites">Favoritos</string>
+    <string name="tile_favorites_help">Tus contactos con estrella; un toque llama</string>
+    <string name="tile_widget">Widget de Android</string>
+    <string name="tile_widget_help">Un widget de otra app (por ejemplo Musixmatch)</string>
+    <string name="favorites_allow">Permitir contactos</string>
+    <string name="favorites_empty">No hay contactos con estrella. Márcalos en el celular y sincroniza los contactos por Bluetooth.</string>
+    <string name="my_okavango">Mi Okavango</string>
+    <string name="weather_unknown">Sin clima</string>
+    <string name="widget_bind_failed">No se pudo agregar el widget: esta pantalla no deja agregarlos.</string>
+    <string name="pick_widget">Elige un widget</string>
+    <string name="pick_widget_empty">No hay widgets instalados. Instala la app (por ejemplo Musixmatch) y vuelve.</string>
+    <string name="widget_remove_hint">Mantén presionado para quitarlo</string>
     <string name="toggle_off">Apagado</string>
     <string name="logo_intro_help">Al abrir LiteDash, tu imagen (como el logo de tu marca) aparece unos segundos. Es aparte de los widgets de imagen.</string>
     <string name="intro_no_image">Sin imagen se muestra el logo de LiteDash.</string>
@@ -732,4 +745,6 @@
     <string name="pro_taken">Este código ya se usa en otra pantalla. Pide que lo liberen.</string>
     <string name="pro_offline">Sin conexión. Inténtalo otra vez.</string>
     <string name="pro_expired">Conéctate a internet para seguir con el código de desarrollador</string>
+    <string name="rail_projection">Android Auto</string>
+    <string name="rail_settings">Ajustes</string>
 </resources>

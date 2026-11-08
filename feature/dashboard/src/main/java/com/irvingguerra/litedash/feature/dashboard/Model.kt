@@ -130,6 +130,10 @@ object TileTypes {
     const val WIFI = "wifi"
     /** Enciende y apaga el Bluetooth. */
     const val BLUETOOTH = "bluetooth"
+    /** Contactos favoritos (con estrella) de la agenda; un toque llama. */
+    const val FAVORITES = "favorites"
+    /** Un widget de otra app de Android (p. ej. Musixmatch); [Tile.data] es su appWidgetId. */
+    const val WIDGET = "widget"
 }
 
 /** Sin fondo de tarjeta siempre: el auto, la carretera y la imagen flotan sobre el inicio. */
@@ -185,6 +189,8 @@ enum class Template(val sizes: Set<ScreenSize>) {
     ROUTE(setOf(ScreenSize.SMALL, ScreenSize.MEDIUM, ScreenSize.LARGE)),
     /** Pantallas paradas: el mapa arriba y abajo el auto con la música y la radio. */
     VERTICAL_MAP(setOf(ScreenSize.VERTICAL)),
+    /** Diseño del Okavango: el auto con el clima, los favoritos al lado y abajo la música, el Wi‑Fi y el Bluetooth. */
+    OKAVANGO(setOf(ScreenSize.SMALL, ScreenSize.MEDIUM, ScreenSize.LARGE)),
 }
 
 /** Las que no llevan auto (para quien no lo quiere ver en el inicio). */
@@ -297,6 +303,20 @@ fun Template.tiles(c: Grid, hero: String = TileTypes.CAR, skip: (String) -> Bool
             place(TileTypes.CAR, 0, 0, cols, carHeight)
             place(TileTypes.MUSIC, 0, carHeight, cols, 2)
             mapOr(TileTypes.CLOCK, 0, carHeight + 2, cols, rows - carHeight - 2)
+        }
+        Template.OKAVANGO -> {
+            val top = rows - strip
+            // Los favoritos solo cuando hay ancho (en una pantalla angosta, el auto ocupa todo).
+            val fav = if (cols >= 9) maxOf(3, cols * 3 / 10) else 0
+            place(TileTypes.CAR, 0, 0, cols - fav, top)
+            if (fav > 0) place(TileTypes.FAVORITES, cols - fav, 0, fav, top)
+            val music = maxOf(3, cols * 4 / 10).coerceAtMost(cols)
+            place(TileTypes.MUSIC, 0, rows - strip, music, strip)
+            // Wi‑Fi y Bluetooth; lo que sobre queda libre para agregar un widget de Android.
+            val rest = cols - music
+            val unit = if (rest >= 4) 2 else 1
+            if (rest >= unit) place(TileTypes.WIFI, music, rows - strip, unit, strip)
+            if (rest >= 2 * unit) place(TileTypes.BLUETOOTH, music + unit, rows - strip, unit, strip)
         }
         Template.SPEED -> {
             // Un poco más ancho que alto (el arco es así); en pantallas paradas, cuadrado al centro.
@@ -432,8 +452,6 @@ fun Template.tiles(c: Grid, hero: String = TileTypes.CAR, skip: (String) -> Bool
  * estrenar; en las medianas, grandes y paradas el sugerido ya trae el mapa de 2 filas.
  */
 fun Grid.suggestedTemplate() = when (size) {
-    ScreenSize.SMALL -> Template.CENTER
-    ScreenSize.MEDIUM -> Template.CARDS
-    ScreenSize.LARGE -> Template.PANEL
+    ScreenSize.SMALL, ScreenSize.MEDIUM, ScreenSize.LARGE -> Template.OKAVANGO
     ScreenSize.VERTICAL -> Template.VERTICAL
 }

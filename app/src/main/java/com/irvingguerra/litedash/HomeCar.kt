@@ -96,7 +96,11 @@ fun HeroTile(
             ReadyNow(onReady)
             ImageTile(d, tile.data, onClick, modifier)
         }
-        else -> HomeCar(d, pkg, onClick, modifier, onReady, onTires)
+        // Sin modelo 3D del catálogo: el Okavango sobre el cielo del clima (ya está pintado: listo de una vez).
+        else -> if (pkg == null) {
+            ReadyNow(onReady)
+            OkavangoScene(d, onClick, modifier)
+        } else HomeCar(d, pkg, onClick, modifier, onReady, onTires)
     }
 }
 
