@@ -66,7 +66,6 @@ public class MotionWatchActivity extends Activity implements SensorEventListener
     private long gyroMaxAt;
     private boolean moving;
     private long movingSince, lastUi;
-    private float baseStd = -1; // vibración con el carro quieto (primeros segundos)
     private long startedAt;
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -95,7 +94,7 @@ public class MotionWatchActivity extends Activity implements SensorEventListener
         TextView title = new TextView(this);
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        title.setText("Monitor de movimiento v2.4 (no usa la cámara): mete reversa 2 veces, luego maneja unos minutos, acelera a más de 30 km/h y frena hasta parar.");
+        title.setText("Monitor de movimiento v2.5 (no usa la cámara): carro quieto 20 s con motor encendido, mete reversa 2 veces (5 s cada vez), maneja 5 min con paradas (semáforo), y apaga el carro al final.");
         root.addView(title);
         live = new TextView(this);
         live.setTextColor(Color.WHITE);
@@ -198,8 +197,7 @@ public class MotionWatchActivity extends Activity implements SensorEventListener
             for (int i = 0; i < winN; i++) var += (win[i] - mean) * (win[i] - mean);
             accStd = (float) Math.sqrt(var / winN);
             // Los primeros 5 s (carro quieto) fijan la línea base de vibración.
-            if (now - startedAt < 5000) baseStd = Math.max(baseStd, accStd);
-            else evaluate(now);
+            if (now - startedAt > 2000) evaluate(now);
         } else {
             gx = e.values[0]; gy = e.values[1]; gz = e.values[2];
             float g = Math.abs(gx) + Math.abs(gy) + Math.abs(gz);
@@ -208,23 +206,40 @@ public class MotionWatchActivity extends Activity implements SensorEventListener
         if (now - lastUi > 250) {
             lastUi = now;
             live.setText(String.format(Locale.US,
-                    "Acel x %.2f  y %.2f  z %.2f  ·  vibración %.3f (quieto ≈ %.3f)\nGiro x %.2f  y %.2f  z %.2f  ·  máx. 3 s %.2f\nEstimación: %s",
-                    ax, ay, az, accStd, Math.max(baseStd, 0), gx, gy, gz, gyroMax,
-                    now - startedAt < 5000 ? "calibrando (deja el carro quieto)…" : moving ? "EN MOVIMIENTO" : "quieto"));
+                    "Acel x %.2f  y %.2f  z %.2f  ·  vibración %.3f (arranca > %.2f, para < %.2f)\nGiro x %.2f  y %.2f  z %.2f  ·  máx. 3 s %.2f\nEstimación: %s",
+                    ax, ay, az, accStd, START_THR, STOP_THR, gx, gy, gz, gyroMax, moving ? "EN MOVIMIENTO" : "quieto"));
         }
     }
 
+    // Umbrales fijos con histéresis (quieto ≈ 0.01; en v2.4 la línea base se calibró mal y parpadeaba).
+    private static final float START_THR = 0.08f, STOP_THR = 0.04f;
+    private long aboveSince, belowSince;
+
     private void evaluate(long now) {
-        float base = Math.max(baseStd, 0.02f);
-        boolean m = accStd > base * 2.5f;
+        if (accStd > START_THR) { if (aboveSince == 0) aboveSince = now; belowSince = 0; }
+        else if (accStd < STOP_THR) { if (belowSince == 0) belowSince = now; aboveSince = 0; }
+        else { aboveSince = 0; belowSince = 0; }
+        boolean m = moving;
+        if (!moving && aboveSince != 0 && now - aboveSince > 3000) m = true;
+        if (moving && belowSince != 0 && now - belowSince > 8000) m = false;
         if (m != moving) {
             moving = m;
-            add(String.format(Locale.US, "%s (vibración %.3f, base %.3f, giro %.2f)%s",
-                    m ? "▶ Empieza movimiento" : "■ Se detuvo", accStd, base, gyroMax,
+            add(String.format(Locale.US, "%s (vibración %.3f, giro %.2f)%s",
+                    m ? "▶ Empieza movimiento" : "■ Se detuvo", accStd, gyroMax,
                     m ? "" : String.format(Locale.US, " · duró %d s", (now - movingSince) / 1000)));
             movingSince = now;
         }
+        if (now - lastCsv >= 500) {
+            lastCsv = now;
+            synchronized (csv) {
+                csv.append(fmt.format(new Date())).append(String.format(Locale.US, ",%.4f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d\n",
+                        accStd, ax, ay, az, gx, gy, gz, gyroMax, moving ? 1 : 0));
+            }
+        }
     }
+
+    private long lastCsv;
+    private final StringBuilder csv = new StringBuilder("hora,vibracion,ax,ay,az,gx,gy,gz,giro_max3s,movimiento\n");
 
     @Override
     public void onAccuracyChanged(Sensor s, int a) { }
@@ -240,13 +255,20 @@ public class MotionWatchActivity extends Activity implements SensorEventListener
                 new File(Environment.getExternalStorageDirectory(), "monitor_movimiento.txt"),
                 new File("/storage/usbotg/usbotg-sda2/monitor_movimiento.txt"),
         };
+        String csvData;
+        synchronized (csv) { csvData = csv.toString(); }
         for (File f : targets) {
-            try {
-                FileOutputStream out = new FileOutputStream(f);
-                out.write(data.getBytes("UTF-8"));
-                out.close();
-            } catch (Throwable ignored) { }
+            write(f, data);
+            write(new File(f.getParentFile(), "monitor_movimiento.csv"), csvData);
         }
+    }
+
+    private static void write(File f, String data) {
+        try {
+            FileOutputStream out = new FileOutputStream(f);
+            out.write(data.getBytes("UTF-8"));
+            out.close();
+        } catch (Throwable ignored) { }
     }
 
     private void add(String s) {
