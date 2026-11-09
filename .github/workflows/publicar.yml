@@ -28,6 +28,16 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
 
+      # La descarga de Gradle falla a veces (504 o tiempo agotado en services.gradle.org): se reintenta antes de compilar.
+      - name: Descargar Gradle (con reintentos)
+        run: |
+          for i in $(seq 1 12); do
+            ./gradlew --version --console=plain && exit 0
+            echo "Intento $i falló; se espera 30 s"
+            sleep 30
+          done
+          exit 1
+
       - name: Versión automática
         run: |
           version="1.4.$((200 + GITHUB_RUN_NUMBER))"
