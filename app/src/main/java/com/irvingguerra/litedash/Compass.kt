@@ -128,6 +128,7 @@ fun CompassTile() {
         }
     }
     val names = listOf(R.string.compass_n, R.string.compass_e, R.string.compass_s, R.string.compass_w)
+    val letters = names.map { stringResource(it) }
     Card(Modifier.fillMaxSize().clickable { picking = !picking }) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(14.dp), contentAlignment = Alignment.Center) {
             val side = minOf(maxWidth, maxHeight)
@@ -165,7 +166,7 @@ fun CompassTile() {
                 Column(Modifier.align(Alignment.BottomCenter).padding(bottom = side / 4), horizontalAlignment = Alignment.CenterHorizontally) {
                     val h = heading
                     Label(
-                        if (h == null) stringResource(R.string.compass_none) else "${sector(h, names.map { stringResource(it) })} ${h.roundToInt()}°",
+                        if (h == null) stringResource(R.string.compass_none) else "${sector(h, letters)} ${h.roundToInt()}°",
                         Typography.title, maxLines = 1,
                     )
                 }
@@ -178,7 +179,7 @@ fun CompassTile() {
                     for (row in points.chunked(3)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             for ((deg, parts) in row) {
-                                Button(parts.joinToString("") { stringResource(names[it]) }, {
+                                Button(parts.joinToString("") { letters[it] }, {
                                     heading = deg
                                     prefs.edit().putFloat("heading", deg).apply()
                                     picking = false
