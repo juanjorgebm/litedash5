@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setBackgroundColor(BG);
-        // La barra del clima del carro tapa la parte de abajo de la pantalla.
-        root.setPadding(0, 0, 0, dp(80));
+        // La barra del clima del carro ya queda fuera de la ventana: la app llega hasta abajo.
+        root.setPadding(0, 0, 0, 0);
 
         LinearLayout rail = new LinearLayout(this);
         rail.setOrientation(LinearLayout.VERTICAL);
