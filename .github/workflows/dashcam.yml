@@ -32,4 +32,8 @@ jobs:
           gh release view dashcam-okavango >/dev/null 2>&1 || \
             gh release create dashcam-okavango --prerelease --target "$GITHUB_SHA" \
               --title "Dashcam Okavango" --notes "App de dashcam para el Okavango (Android 5.1). Graba la cámara 360 a la USB solo con el carro en movimiento."
-          gh release upload dashcam-okavango tools/dashcam/build/dashcam-okavango.apk --clobber
+          # version.txt = "versionCode versionName": la app lo lee para saber si hay una versión nueva.
+          code=$(grep -o 'versionCode="[0-9]*"' tools/dashcam/AndroidManifest.xml | grep -o '[0-9]*')
+          name=$(grep -o 'versionName="[^"]*"' tools/dashcam/AndroidManifest.xml | cut -d'"' -f2)
+          echo "$code $name" > version.txt
+          gh release upload dashcam-okavango tools/dashcam/build/dashcam-okavango.apk version.txt --clobber

@@ -28,6 +28,10 @@ public class MainActivity extends Activity {
 
     private TextView status, detail, folder, error, events, startVal, stopVal;
     private Switch autoSwitch;
+    private Button updateButton;
+    private TextView updateInfo;
+    private String[] available;
+    private boolean busy;
     private final Handler ui = new Handler();
     private boolean syncing;
 
@@ -77,6 +81,9 @@ public class MainActivity extends Activity {
         buttons.addView(button("Ver videos", new View.OnClickListener() {
             public void onClick(View v) { startActivity(new Intent(MainActivity.this, FilesActivity.class)); }
         }));
+        updateButton = button("Buscar actualización", new View.OnClickListener() {
+            public void onClick(View v) { onUpdateClick(); }
+        });
         left.addView(buttons);
 
         LinearLayout thr = new LinearLayout(this);
@@ -99,6 +106,13 @@ public class MainActivity extends Activity {
         left.addView(folder);
         error = text("", 16, RED);
         left.addView(error);
+        LinearLayout upd = new LinearLayout(this);
+        upd.setGravity(Gravity.CENTER_VERTICAL);
+        upd.setPadding(0, dp(6), 0, 0);
+        upd.addView(updateButton);
+        updateInfo = text("Versión " + Updater.currentName(this), 14, Color.rgb(0xAA, 0xAA, 0xAA));
+        upd.addView(updateInfo);
+        left.addView(upd);
 
         // Columna derecha: hueco para la vista previa flotante (768×288 px) y el último evento.
         LinearLayout right = new LinearLayout(this);
@@ -116,6 +130,63 @@ public class MainActivity extends Activity {
         right.addView(events);
 
         setContentView(root);
+        checkUpdate(false);
+    }
+
+    // ---------------------------------------------------------------- actualizador
+
+    private void onUpdateClick() {
+        if (busy) return;
+        if (available != null) install(); else checkUpdate(true);
+    }
+
+    private void checkUpdate(final boolean manual) {
+        busy = true;
+        if (manual) updateInfo.setText("Buscando actualización…");
+        new Thread(new Runnable() {
+            public void run() {
+                String msg;
+                try {
+                    String[] l = Updater.latest();
+                    if (Integer.parseInt(l[0]) > Updater.currentCode(MainActivity.this)) {
+                        available = l;
+                        msg = "Hay una versión nueva: " + l[1] + " (tienes " + Updater.currentName(MainActivity.this) + "). Toca Actualizar.";
+                    } else {
+                        msg = "Versión " + Updater.currentName(MainActivity.this) + " · es la más reciente";
+                    }
+                } catch (Throwable t) {
+                    msg = manual ? "No se pudo revisar (¿hay internet?): " + t.getMessage()
+                            : "Versión " + Updater.currentName(MainActivity.this);
+                }
+                final String m = msg;
+                ui.post(new Runnable() {
+                    public void run() {
+                        busy = false;
+                        updateInfo.setText(m);
+                        updateInfo.setTextColor(available != null ? AMBER : Color.rgb(0xAA, 0xAA, 0xAA));
+                        if (available != null) updateButton.setText("Actualizar a " + available[1]);
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void install() {
+        busy = true;
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    Updater.downloadAndInstall(MainActivity.this, new Updater.Progress() {
+                        public void update(final String text) {
+                            ui.post(new Runnable() { public void run() { updateInfo.setText(text); } });
+                        }
+                    });
+                } catch (final Throwable t) {
+                    ui.post(new Runnable() { public void run() { updateInfo.setText("Error al descargar: " + t.getMessage()); } });
+                }
+                ui.post(new Runnable() { public void run() { busy = false; } });
+            }
+        }).start();
     }
 
     private final Runnable refresh = new Runnable() {
