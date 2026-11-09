@@ -886,6 +886,13 @@ class MusicRepository(private val context: Context) {
          * apps de fábrica no hacen nada); y LiteDash recuerda que lo mandó ([assume]).
          */
         fun toggle() {
+            if (this !== radio && CarAvrcp.active(context)) {
+                // Música del celular por el Bluetooth de la pantalla: sin sesión que leer, se supone lo último mandado.
+                val pause = carMusicPlaying || musicActive()
+                carMusicPlaying = !pause
+                trace("Bluetooth del carro (AVRCP): ${if (pause) "pausa" else "play"}")
+                return CarAvrcp.send(context, if (pause) CarAvrcp.PAUSE else CarAvrcp.PLAY)
+            }
             if (carMusicBlind(this)) {
                 // Sin estado que leer: se supone lo último que se mandó (o que Android oye música sonando).
                 val pause = carMusicPlaying || musicActive()
@@ -919,6 +926,7 @@ class MusicRepository(private val context: Context) {
          * teclas (casi siempre la estación guardada que sigue o buscar la siguiente).
          */
         fun next() {
+            if (this !== radio && CarAvrcp.active(context)) { trace("Bluetooth del carro (AVRCP): siguiente"); return CarAvrcp.send(context, CarAvrcp.NEXT) }
             if (carCommand(this, "next")) return
             if (carMusicBlind(this)) return resume()
             topWayFor(this)?.let { trace("topway siguiente"); return it.next() }
@@ -926,6 +934,7 @@ class MusicRepository(private val context: Context) {
         }
 
         fun previous() {
+            if (this !== radio && CarAvrcp.active(context)) { trace("Bluetooth del carro (AVRCP): anterior"); return CarAvrcp.send(context, CarAvrcp.PREVIOUS) }
             if (carCommand(this, "pre")) return
             if (carMusicBlind(this)) return resume()
             topWayFor(this)?.let { trace("topway anterior"); return it.previous() }
@@ -1029,6 +1038,12 @@ class MusicRepository(private val context: Context) {
      * está abriendo.
      */
     fun resume() {
+        if (CarAvrcp.active(context)) {
+            carMusicPlaying = true
+            music.starting = null
+            trace("Bluetooth del carro (AVRCP): play")
+            return CarAvrcp.send(context, CarAvrcp.PLAY)
+        }
         val pkg = active ?: preferred ?: music.controller?.packageName ?: store.getString(KEY_LAST_APP, null)
         val session = music.controller?.takeIf { song != null && (pkg == null || it.packageName == pkg) }
         if (session != null) {
