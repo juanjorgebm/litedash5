@@ -136,15 +136,21 @@ public class MainActivity extends Activity {
         detail.setPadding(0, dp(4), 0, dp(16));
         left.addView(detail);
 
+        // Botón = ícono + texto, centrados juntos en el recuadro.
+        recBox = new LinearLayout(this);
+        recBox.setGravity(Gravity.CENTER);
+        recIcon = new android.widget.ImageView(this);
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(34), dp(34));
+        ilp.rightMargin = dp(18);
+        recBox.addView(recIcon, ilp);
         recButton = text("GRABAR", 28, Color.WHITE);
-        recButton.setCompoundDrawablePadding(dp(16));
-        setRecIcon(false);
-        recButton.setGravity(Gravity.CENTER);
         recButton.setTypeface(Typeface.DEFAULT_BOLD);
-        recButton.setOnClickListener(new View.OnClickListener() {
+        recBox.addView(recButton);
+        setRecIcon(false);
+        recBox.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.toggle(); }
         });
-        left.addView(recButton, new LinearLayout.LayoutParams(dp(360), dp(96)));
+        left.addView(recBox, new LinearLayout.LayoutParams(dp(360), dp(96)));
 
         TextView hint = text("Graba al tocar. Con la grabación automática encendida, también graba sola mientras el carro va en marcha y se detiene al parar.", 15, GREY);
         hint.setPadding(0, dp(12), dp(16), 0);
@@ -343,7 +349,7 @@ public class MainActivity extends Activity {
                 boolean active = s.recording || s.forcedUntil > now;
                 recButton.setText(active ? "DETENER" : "GRABAR");
                 setRecIcon(active);
-                recButton.setBackground(active ? pressable(RED, Color.WHITE) : pressable(SLATE, AMBER));
+                recBox.setBackground(active ? pressable(RED, Color.WHITE) : pressable(SLATE, AMBER));
                 String vib = String.format(Locale.US, "Vibración %.3f  (últimos 10 s: %.3f – %.3f)  ·  %s",
                         s.vibration, s.vibMin10 > 8 ? 0 : s.vibMin10, s.vibMax10, s.moving ? "en marcha" : "detenido");
                 detail.setText(vib + (s.armed ? "  ·  automática encendida" : "  ·  automática apagada"));
@@ -487,6 +493,8 @@ public class MainActivity extends Activity {
     }
 
     private Boolean recIconActive;
+    private LinearLayout recBox;
+    private android.widget.ImageView recIcon;
 
     /** Círculo rojo (grabar) o cuadro blanco (detener), dibujados: la letra del sistema no trae ● ni ■. */
     private void setRecIcon(boolean active) {
@@ -504,7 +512,7 @@ public class MainActivity extends Activity {
             g.setStroke(dp(3), Color.WHITE);
             g.setSize(dp(34), dp(34));
         }
-        recButton.setCompoundDrawablesWithIntrinsicBounds(g, null, null, null);
+        recIcon.setImageDrawable(g);
     }
 
     private int dp(int v) {
