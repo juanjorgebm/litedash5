@@ -21,4 +21,6 @@
     <string name="radio_fm">FM de la pantalla</string>
     <string name="radio_unlinked">Enlaza la radio de tu pantalla en Ajustes o activa la radio por internet</string>
     <string name="radio_settings">Ajustes</string>
+    <string name="car_player">Música del carro</string>
+    <string name="car_player_help">Controla la música del carro con estos botones.</string>
 </resources>

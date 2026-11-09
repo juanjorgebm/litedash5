@@ -1270,6 +1270,13 @@ class MusicRepository(private val context: Context) {
     private fun carMusicBlind(lens: Lens): Boolean =
         lens !== radio && target(lens) == CAR_MUSIC_APP && lens.controller?.packageName != CAR_MUSIC_APP
 
+    /**
+     * Sin nada que leer pero sonando por el carro (USB, Bluetooth o su Música): el carro no publica el título,
+     * así que la pieza se vuelve un control remoto con botones grandes en vez de decir "Nada sonando".
+     */
+    val carMode: Boolean
+        get() = music.song == null && music.starting == null && (CarAvrcp.active(context) || carMusicBlind(music))
+
     private fun press(lens: Lens, code: Int): Boolean {
         val pkg = target(lens)
         val receiver = keyReceiver(pkg)

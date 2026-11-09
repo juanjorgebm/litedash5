@@ -37,8 +37,9 @@ private fun SongText(repo: MusicRepository, song: Song?, tall: Boolean) {
         Label(stringResource(R.string.opening_app, opening), Typography.subtitle, c.accent, maxLines = 1)
         Label(stringResource(R.string.opening_wait), Typography.small, c.textMuted, maxLines = 1)
     } else if (song == null) {
-        Label(stringResource(R.string.nothing_playing), if (tall) Typography.title else Typography.subtitle, maxLines = 1)
-        Label(idleHint(repo), Typography.small, c.textMuted, maxLines = 1)
+        val car = repo.carMode
+        Label(stringResource(if (car) R.string.car_player else R.string.nothing_playing), if (tall) Typography.title else Typography.subtitle, maxLines = 1)
+        Label(if (car) stringResource(R.string.car_player_help) else idleHint(repo), Typography.small, c.textMuted, maxLines = 1)
     } else {
         SongLines(repo, song, tall)
         if (song.durationMs > 0) {

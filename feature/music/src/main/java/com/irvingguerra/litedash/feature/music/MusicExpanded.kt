@@ -80,6 +80,7 @@ private fun Details(repo: MusicRepository, song: Song?, modifier: Modifier) {
         val title = when {
             song != null -> song.title
             opening != null -> stringResource(R.string.opening_app, opening)
+            repo.carMode -> stringResource(R.string.car_player)
             else -> stringResource(R.string.nothing_playing)
         }
         val error = song?.error
@@ -88,6 +89,7 @@ private fun Details(repo: MusicRepository, song: Song?, modifier: Modifier) {
             song?.buffering == true -> stringResource(R.string.player_connecting)
             song != null -> subtitleFor(repo, song)
             opening != null -> stringResource(R.string.opening_wait)
+            repo.carMode -> stringResource(R.string.car_player_help)
             repo.usbDrive != null -> stringResource(R.string.usb_drive_in, repo.usbDrive.orEmpty())
             else -> stringResource(R.string.resume_explain)
         }
@@ -98,7 +100,7 @@ private fun Details(repo: MusicRepository, song: Song?, modifier: Modifier) {
         }
         Spacer(Modifier.height(16.dp))
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Controls(repo, song?.playing == true, loading = song?.buffering == true, size = 64.dp, playSize = 76.dp, gap = 12.dp)
+            Controls(repo, song?.playing == true, loading = song?.buffering == true, size = if (repo.carMode) 96.dp else 64.dp, playSize = if (repo.carMode) 120.dp else 76.dp, gap = if (repo.carMode) 24.dp else 12.dp)
         }
         if (song != null && song.actions.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
