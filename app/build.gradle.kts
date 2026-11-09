@@ -98,7 +98,8 @@ android {
             dimension = "channel"
             buildConfigField("String", "CHANNEL", "\"github\"")
             buildConfigField("String", "CATALOG_URL", "\"$CATALOG_URL\"")
-            buildConfigField("String", "UPDATES_URL", "\"https://api.github.com/repos/IrvingGuerra/litedash/releases?per_page=20\"")
+            // Esta versión para Android 5 no sale de los lanzamientos del proyecto original: sin actualizador.
+            buildConfigField("String", "UPDATES_URL", "\"\"")
         }
     }
 
