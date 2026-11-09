@@ -370,7 +370,7 @@ internal fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier, showTabs: Bo
 @Composable
 internal fun rememberWorking(source: List<Station>?): Pair<List<Station>?, Boolean> {
     val context = LocalContext.current
-    val state by produceState<Pair<List<Station>?, Boolean>>(null to false, source) {
+    val state by produceState<Pair<List<Station>?, Boolean>>(null to false, source?.map { it.id }) {
         if (source == null) { value = null to false; return@produceState }
         val ok = ArrayList<Station>()
         value = emptyList<Station>() to true

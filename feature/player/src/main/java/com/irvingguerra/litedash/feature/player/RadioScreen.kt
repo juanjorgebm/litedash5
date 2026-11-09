@@ -244,7 +244,9 @@ private fun Suggested(station: Station, modifier: Modifier) {
         value = withContext(Dispatchers.IO) { Radio.similar(context, station) }
     }
     val favorites = RadioFavorites.list(context)
-    val candidates = remember(similar, favorites, station.id) {
+    // Las favoritas se leen de nuevo en cada repintado (lista nueva cada vez): se compara por ids, no por lista, o se reiniciaría la comprobación sin parar.
+    val favoriteIds = favorites.joinToString(",") { it.id }
+    val candidates = remember(similar, favoriteIds, station.id) {
         (similar.orEmpty().take(18) + favorites).distinctBy { it.id }.filter { it.id != station.id }.take(24)
     }
     val (working, _) = rememberWorking(candidates)
