@@ -46,4 +46,12 @@
     <string name="radio_checking_n">Comprobando… %1$d suenan</string>
     <string name="radio_fav_added">%1$s: guardada en favoritas</string>
     <string name="radio_fav_removed">%1$s: quitada de favoritas</string>
+    <string name="radio_popular">Populares ahora</string>
+    <string name="radio_clicks">%1$d sintonías hoy</string>
+    <string name="radio_now_tab">En reproducción</string>
+    <string name="radio_live">EN VIVO</string>
+    <string name="radio_connecting">Conectando…</string>
+    <string name="radio_no_song">En vivo</string>
+    <string name="radio_suggested">Sugeridas</string>
+    <string name="radio_nothing">Elige una emisora de Favoritas, Cerca o Explorar.</string>
 </resources>

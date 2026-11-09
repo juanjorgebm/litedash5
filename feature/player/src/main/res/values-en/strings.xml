@@ -46,4 +46,12 @@
     <string name="radio_checking_n">Checking… %1$d working</string>
     <string name="radio_fav_added">%1$s: saved to favorites</string>
     <string name="radio_fav_removed">%1$s: removed from favorites</string>
+    <string name="radio_popular">Popular now</string>
+    <string name="radio_clicks">%1$d tune-ins today</string>
+    <string name="radio_now_tab">Now playing</string>
+    <string name="radio_live">LIVE</string>
+    <string name="radio_connecting">Connecting…</string>
+    <string name="radio_no_song">Live</string>
+    <string name="radio_suggested">Suggested</string>
+    <string name="radio_nothing">Pick a station from Favorites, Nearby or Explore.</string>
 </resources>

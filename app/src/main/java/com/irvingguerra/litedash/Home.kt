@@ -96,6 +96,7 @@ import com.irvingguerra.litedash.feature.music.RadioTile
 import com.irvingguerra.litedash.feature.navigation.NavigationRepository
 import com.irvingguerra.litedash.feature.obd.ObdRepository
 import com.irvingguerra.litedash.feature.player.Player
+import com.irvingguerra.litedash.feature.player.RadioScreen
 import com.irvingguerra.litedash.feature.player.PlayerBrowser
 import com.irvingguerra.litedash.feature.player.PlayerSource
 import com.irvingguerra.litedash.feature.player.RadioFavorites
@@ -649,9 +650,7 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
         when (val p = panel) {
             null -> Unit
             Panel.Drawer -> DrawerPanel(d, apps, close = { panel = null })
-            Panel.RadioFull -> PanelScaffold(stringResource(R.string.tile_radio), close = { panel = null }) {
-                PlayerBrowser(PlayerSource.RADIO, { panel = null }, Modifier.fillMaxSize())
-            }
+            Panel.RadioFull -> RadioScreen({ panel = null }, Modifier.fillMaxSize())
             Panel.Settings, Panel.Updates, Panel.Workshop, Panel.MusicSettings, Panel.TiresSettings -> SettingsPanel(
                 d,
                 revision = revision,

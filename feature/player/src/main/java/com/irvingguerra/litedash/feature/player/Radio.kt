@@ -32,6 +32,8 @@ class Station(
     val bitrateKbps: Int,
     val latitude: Double?,
     val longitude: Double?,
+    /** Veces que la sintonizaron las últimas 24 h (el directorio no da oyentes en vivo). */
+    val clicks: Int = 0,
 ) : Playable {
     override val title get() = name
     override val subtitle get() = listOf(tags, state.ifBlank { country }).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Radio" }
@@ -108,6 +110,76 @@ object Radio {
     /** Las más escuchadas del país de la pantalla (cuando no hay ubicación). */
     fun country(context: Context, code: String = MyCar.COUNTRY): List<Station> =
         search(context, "countrycode=${encode(code)}&order=clickcount&reverse=true")
+
+    /** Las más escuchadas del mundo. */
+    fun world(context: Context): List<Station> = search(context, "order=clickcount&reverse=true")
+
+    /** Parecidas a [station]: su género principal en su país, las más escuchadas primero. */
+    fun similar(context: Context, station: Station): List<Station> {
+        val tag = station.tags.split(',').firstOrNull()?.trim().orEmpty()
+        val query = buildString {
+            if (tag.isNotBlank()) append("tag=${encode(tag)}&")
+            val code = java.util.Locale.getISOCountries().firstOrNull { java.util.Locale("", it).getDisplayCountry(java.util.Locale.ENGLISH).equals(station.country, true) || it.equals(station.country, true) }
+            if (code != null) append("countrycode=$code&")
+            append("order=clickcount&reverse=true")
+        }
+        return search(context, query).filter { it.id != station.id }
+    }
+
+    /** Lo que una estación dice de sí y de lo que suena (metadatos ICY del flujo). */
+    class NowInfo(val song: String?, val name: String?, val description: String?, val genre: String?, val bitrate: Int?)
+
+    private val nowCache = java.util.concurrent.ConcurrentHashMap<String, Pair<NowInfo?, Long>>()
+
+    /** [nowInfo] recordado 25 s; llamarla fuera del hilo principal. */
+    fun now(context: Context, station: Station): NowInfo? {
+        val t = System.currentTimeMillis()
+        nowCache[station.id]?.takeIf { t - it.second < 25_000 }?.let { return it.first }
+        val info = nowInfo(context, station.uri.toString())
+        nowCache[station.id] = info to t
+        return info
+    }
+
+    private fun nowInfo(context: Context, url: String): NowInfo? {
+        val c = runCatching {
+            Https.open(context, url).apply {
+                connectTimeout = 6_000
+                readTimeout = 8_000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Icy-MetaData", "1")
+            }
+        }.getOrNull() ?: return null
+        return try {
+            if (c.responseCode !in 200..299) return null
+            val every = c.getHeaderField("icy-metaint")?.trim()?.toIntOrNull()
+            var song: String? = null
+            if (every != null && every in 1..65_536) {
+                val input = c.inputStream
+                var left = every
+                val sink = ByteArray(4096)
+                while (left > 0) {
+                    val n = input.read(sink, 0, minOf(left, sink.size))
+                    if (n < 0) return null
+                    left -= n
+                }
+                val size = input.read() * 16
+                if (size > 0) {
+                    val block = ByteArray(size)
+                    var got = 0
+                    while (got < size) { val n = input.read(block, got, size - got); if (n < 0) break; got += n }
+                    val text = String(block, 0, got, Charsets.UTF_8).trimEnd('\u0000')
+                    song = Regex("StreamTitle='(.*?)';", RegexOption.DOT_MATCHES_ALL).find(text)?.groupValues?.get(1)?.trim()
+                }
+            }
+            fun clean(v: String?) = v?.trim()?.takeIf { it.isNotEmpty() }
+            NowInfo(clean(song), clean(c.getHeaderField("icy-name")), clean(c.getHeaderField("icy-description")), clean(c.getHeaderField("icy-genre")), c.getHeaderField("icy-br")?.substringBefore(',')?.trim()?.toIntOrNull())
+        } catch (e: Exception) {
+            null
+        } finally {
+            c.disconnect()
+        }
+    }
 
     /** Por nombre, en todo el mundo. */
     fun byName(context: Context, name: String): List<Station> =
@@ -252,6 +324,7 @@ object Radio {
                 country = o.optString("country"), state = o.optString("state"),
                 codec = o.optString("codec"), bitrateKbps = o.optInt("bitrate"),
                 latitude = o.optDouble("geo_lat").takeIf { !it.isNaN() }, longitude = o.optDouble("geo_long").takeIf { !it.isNaN() },
+                clicks = o.optInt("clickcount"),
             )
         }
         return out
