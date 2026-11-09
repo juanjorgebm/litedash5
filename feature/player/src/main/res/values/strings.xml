@@ -36,4 +36,5 @@
     <string name="library_pick_folder">Elegir carpeta</string>
     <string name="library_pick_folder_help">Si tu música está en la memoria pero no aparece, elige su carpeta: LiteDash la recordará.</string>
     <string name="library_unreadable">Veo la memoria %1$s, pero tu pantalla no deja leer sus canciones. Elige su carpeta y LiteDash la recordará.</string>
+    <string name="library_no_picker">Esta pantalla no trae selector de carpetas. LiteDash busca la memoria USB sola: desconéctala y vuelve a conectarla.</string>
 </resources>

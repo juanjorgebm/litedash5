@@ -192,10 +192,20 @@ object Drives {
         } else {
             // Android 6 no lista los volúmenes: las memorias se montan como carpetas de /storage
             // (solo las removibles: ahí también hay enlaces a la memoria interna).
-            File("/storage").listFiles().orEmpty()
+            val found = File("/storage").listFiles().orEmpty()
                 .filter { it.name != "emulated" && it.name != "self" && Environment.getExternalStorageState(it) == Environment.MEDIA_MOUNTED }
                 .filter { runCatching { Environment.isExternalStorageRemovable(it) }.getOrDefault(false) }
                 .map { Drive(name = context.getString(R.string.usb_drive), volume = null, path = it.path, id = it.name) }
+            // Pantallas de carro (p. ej. Neusoft): la USB se monta anidada, como /storage/usbotg/usbotg-sda2,
+            // y Android no la declara removible. Se toma cualquier carpeta legible con contenido a dos niveles.
+            found.ifEmpty {
+                val internal = runCatching { Environment.getExternalStorageDirectory().canonicalPath }.getOrNull()
+                File("/storage").listFiles().orEmpty()
+                    .filter { it.isDirectory && it.name != "emulated" && it.name != "self" && it.name != "sdcard0" && it.name != "sdcard" }
+                    .flatMap { top -> top.listFiles().orEmpty().filter { it.isDirectory }.ifEmpty { listOf(top) } }
+                    .filter { d -> runCatching { d.canonicalPath != internal && !d.listFiles().isNullOrEmpty() }.getOrDefault(false) }
+                    .map { Drive(name = context.getString(R.string.usb_drive), volume = null, path = it.path, id = it.path) }
+            }
         }
     }.getOrDefault(emptyList())
 

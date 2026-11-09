@@ -125,7 +125,7 @@ private fun LibraryBrowser(onPicked: () -> Unit, modifier: Modifier) {
         }
     }
     val folderButton: @Composable () -> Unit = {
-        Button(stringResource(R.string.library_pick_folder), { runCatching { pickFolder.launch(null) } })
+        Button(stringResource(R.string.library_pick_folder), { runCatching { pickFolder.launch(null) }.onFailure { android.widget.Toast.makeText(context, R.string.library_no_picker, android.widget.Toast.LENGTH_LONG).show() } })
     }
     if (!permission) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {

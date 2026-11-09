@@ -36,4 +36,5 @@
     <string name="library_pick_folder">Choose folder</string>
     <string name="library_pick_folder_help">If your music is on the drive but doesn\'t show up, choose its folder: LiteDash will remember it.</string>
     <string name="library_unreadable">I can see the drive %1$s, but your screen doesn\'t let apps read its songs. Choose its folder and LiteDash will remember it.</string>
+    <string name="library_no_picker">This screen has no folder picker. LiteDash looks for the USB drive on its own: unplug it and plug it in again.</string>
 </resources>
