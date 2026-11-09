@@ -24,7 +24,8 @@ fun MusicTile(repo: MusicRepository, revision: Int, onExpand: () -> Unit, modifi
         repo, revision, onExpand, modifier, song, Icons.music, stringResource(R.string.music), stringResource(R.string.music_explain),
         text = { tall -> SongText(repo, song, tall) },
         // Cargando se pinta como pausa: tocarlo cancela la carga.
-        controls = { m, compact -> Controls(repo, song?.playing == true, m, loading = song?.buffering == true, compact = compact) },
+        // Música del carro sin título: siempre anterior y siguiente, aunque la pieza sea angosta.
+        controls = { m, compact -> Controls(repo, song?.playing == true, m, loading = song?.buffering == true, compact = compact && !repo.carMode, size = 48.dp) },
     )
 }
 
