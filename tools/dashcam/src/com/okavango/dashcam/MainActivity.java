@@ -301,7 +301,7 @@ public class MainActivity extends Activity {
             public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setSpeed(s.speedThr + 5); }
         }));
         gpsCard.addView(sr);
-        TextView gtip = text("Si hay señal GPS, la velocidad decide cuándo grabar y la ubicación queda en el video. Sin GPS se usa la vibración (abajo).", 15, GREY);
+        TextView gtip = text("Con señal GPS empieza a grabar al pasar de esa velocidad y sigue hasta que el carro baja de 1 km/h (casi detenido). La ubicación queda en el video. Sin GPS se usa la vibración (abajo).", 15, GREY);
         gtip.setPadding(0, dp(6), 0, 0);
         gpsCard.addView(gtip);
 
