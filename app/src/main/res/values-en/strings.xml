@@ -758,4 +758,5 @@
     <string name="compass_s">S</string>
     <string name="compass_w">W</string>
     <string name="nav_need_notifications">For Waze or Maps turns, tap here and give LiteDash notification access</string>
+    <string name="compass_pick">Tap where the car is facing now</string>
 </resources>
