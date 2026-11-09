@@ -78,7 +78,7 @@ final class Updater {
 
     /**
      * Android 5.1 no trae las raíces que usan hoy GitHub y su servidor de descargas (Let's Encrypt
-     * ISRG X1/X2, USERTrust, Sectigo R46/E46, DigiCert G2): se confía en las del sistema MÁS esas,
+     * ISRG X1/X2, USERTrust, Sectigo R46/E46, DigiCert G2, Amazon 1-4): se confía en las del sistema MÁS esas,
      * que van en res/raw/roots.pem.
      */
     private static javax.net.ssl.SSLSocketFactory factory(Context c) throws Exception {
