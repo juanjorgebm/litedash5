@@ -113,6 +113,49 @@ object Radio {
     fun byName(context: Context, name: String): List<Station> =
         search(context, "name=${encode(name)}&order=clickcount&reverse=true")
 
+    /** Un país o un género del directorio, con cuántas estaciones tiene. [code]: código de país o nombre del género. */
+    data class Category(val name: String, val code: String, val count: Int, val genre: Boolean)
+
+    /** Los países con más estaciones. */
+    fun countries(context: Context): List<Category> =
+        listJson(context, "/json/countries?order=stationcount&reverse=true&hidebroken=true") { o ->
+            val code = o.optString("iso_3166_1").takeIf { it.length == 2 } ?: return@listJson null
+            val n = o.optInt("stationcount").takeIf { it >= 3 } ?: return@listJson null
+            Category(java.util.Locale("", code).displayCountry.ifBlank { o.optString("name") }, code, n, genre = false)
+        }.take(150)
+
+    /** Los géneros (etiquetas) con más estaciones. */
+    fun tags(context: Context): List<Category> =
+        listJson(context, "/json/tags?order=stationcount&reverse=true&hidebroken=true&limit=90") { o ->
+            val name = o.optString("name").trim().takeIf { it.length in 2..24 } ?: return@listJson null
+            val n = o.optInt("stationcount").takeIf { it >= 5 } ?: return@listJson null
+            Category(name.replaceFirstChar { it.uppercase() }, name, n, genre = true)
+        }
+
+    /** Las más escuchadas de un país ([code] de dos letras). */
+    fun byCountry(context: Context, code: String): List<Station> =
+        search(context, "countrycode=${encode(code)}&order=clickcount&reverse=true")
+
+    /** Las más escuchadas de un género. */
+    fun byTag(context: Context, tag: String): List<Station> =
+        search(context, "tag=${encode(tag)}&tagExact=true&order=clickcount&reverse=true")
+
+    private fun <T : Any> listJson(context: Context, path: String, map: (JSONObject) -> T?): List<T> {
+        repeat(ROUNDS) {
+            for (server in SERVERS) {
+                val text = runCatching {
+                    open(context, server + path).use { c ->
+                        if (c.responseCode != 200) return@runCatching null
+                        c.inputStream.bufferedReader().readText()
+                    }
+                }.getOrNull() ?: continue
+                val array = runCatching { JSONArray(text) }.getOrNull() ?: continue
+                return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let(map) }
+            }
+        }
+        return emptyList()
+    }
+
     /** Le dice a Radio Browser que alguien sintonizó [station] (así ordena las populares); sin esperar respuesta. */
     fun countClick(context: Context, station: Station) {
         Thread {

@@ -210,12 +210,15 @@ private fun groupName(group: Group, name: String): String = when {
 
 // --- Radio por internet ---
 
-private enum class RadioTab(val title: Int) { NEARBY(R.string.radio_nearby), FAVORITES(R.string.radio_favorites), SEARCH(R.string.radio_search_tab) }
+private enum class RadioTab(val title: Int) { NEARBY(R.string.radio_nearby), FAVORITES(R.string.radio_favorites), EXPLORE(R.string.radio_explore), SEARCH(R.string.radio_search_tab) }
 
 /** Pestaña y búsqueda de la radio: al cerrar y abrir la biblioteca sigue donde estaba. */
 private object RadioBrowserMemory {
     var tab by mutableStateOf(RadioTab.FAVORITES)
     var query by mutableStateOf("")
+    /** Explorar: false = países, true = géneros; y lo que se abrió (null = la lista). */
+    var genres by mutableStateOf(false)
+    var opened by mutableStateOf<Radio.Category?>(null)
 }
 
 @Composable
@@ -251,6 +254,18 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
         if (query.length < 2) return@produceState
         value = withContext(Dispatchers.IO) { Radio.byName(context, query.trim()) }
     }
+    // Explorar: la lista de países o de géneros y, ya abierto uno, sus estaciones.
+    val categories by produceState<List<Radio.Category>?>(null, tab, memory.genres) {
+        value = null
+        if (tab != RadioTab.EXPLORE) return@produceState
+        value = withContext(Dispatchers.IO) { if (memory.genres) Radio.tags(context) else Radio.countries(context) }
+    }
+    val opened = memory.opened
+    val exploring by produceState<List<Station>?>(null, opened) {
+        value = null
+        if (opened == null) return@produceState
+        value = withContext(Dispatchers.IO) { if (opened.genre) Radio.byTag(context, opened.code) else Radio.byCountry(context, opened.code) }
+    }
     val playing = Player.state.current?.key
     fun toggleFavorite(s: Station) {
         favorites = if (favorites.any { it.id == s.id }) favorites.filter { it.id != s.id } else favorites + s
@@ -268,7 +283,29 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
         val (list, empty) = when (tab) {
             RadioTab.NEARBY -> nearby to stringResource(if (nearby == null) R.string.radio_loading else R.string.radio_none)
             RadioTab.FAVORITES -> favorites to stringResource(R.string.radio_no_favorites)
+            RadioTab.EXPLORE -> exploring to stringResource(if (exploring == null) R.string.radio_loading else R.string.radio_none)
             RadioTab.SEARCH -> found to stringResource(if (query.length < 2) R.string.radio_search_help else if (found == null) R.string.radio_loading else R.string.radio_none)
+        }
+        if (tab == RadioTab.EXPLORE) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (opened == null) {
+                    Segmented(listOf(false to stringResource(R.string.radio_countries), true to stringResource(R.string.radio_genres)), memory.genres, { memory.genres = it })
+                } else {
+                    Button(stringResource(R.string.radio_back), { memory.opened = null })
+                    Label(opened.name, Typography.subtitle, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (opened == null) {
+                val cats = categories ?: return Label(stringResource(R.string.radio_loading), Typography.body, c.textMuted)
+                if (cats.isEmpty()) return Label(stringResource(R.string.radio_none), Typography.body, c.textMuted)
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(cats, key = { it.code }) { g ->
+                        BrowserRow(Icons.radio, g.name, stringResource(R.string.radio_count, g.count), selected = false) { memory.opened = g }
+                    }
+                }
+                return
+            }
         }
         if (tab == RadioTab.SEARCH) {
             TextInput(query, { memory.query = it }, stringResource(R.string.radio_search_hint), Modifier.fillMaxWidth(), icon = true)

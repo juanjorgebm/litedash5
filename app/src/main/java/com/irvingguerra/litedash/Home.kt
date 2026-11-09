@@ -111,6 +111,8 @@ enum class Expanded { MUSIC, RADIO, MAP }
 /** Qué panel está abierto encima del inicio (uno a la vez). */
 sealed interface Panel {
     data object Drawer : Panel
+    /** La radio por internet a pantalla completa: explorar por país, género o nombre. */
+    data object RadioFull : Panel
     data object Settings : Panel
     /** Ajustes abiertos en Sistema → Actualizaciones (desde el aviso de versión nueva). */
     data object Updates : Panel
@@ -266,7 +268,7 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
         // Ya de media pantalla o más: lo de en grande ahí mismo (no se mueve).
         TileTypes.MUSIC -> if (p.fillsHalf(d.dashboard.grid)) MusicBig(d, close = null)
         else MusicTile(d.music, revision, onExpand = remember(p) { { actions.onExpand(Expanded.MUSIC, p) } })
-        TileTypes.RADIO -> if (p.fillsHalf(d.dashboard.grid)) RadioBig(d, close = null) { actions.onPanel(Panel.MusicSettings) }
+        TileTypes.RADIO -> if (p.fillsHalf(d.dashboard.grid)) RadioBig(d, close = null, onMaximize = { actions.onPanel(Panel.RadioFull) }) { actions.onPanel(Panel.MusicSettings) }
         else RadioTile(d.music, revision, onExpand = remember(p) { { actions.onExpand(Expanded.RADIO, p) } })
         TileTypes.CLOCK -> ClockTile(d.prefs.driverName, d.weather)
         TileTypes.WEATHER -> WeatherTile(d.weather)
@@ -608,7 +610,7 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
                             val close = { expanded = null }
                             when (big) {
                                 Expanded.MUSIC -> MusicBig(d, close, Modifier.padding(6.dp))
-                                Expanded.RADIO -> RadioBig(d, close, Modifier.padding(6.dp)) { panel = Panel.MusicSettings }
+                                Expanded.RADIO -> RadioBig(d, close, Modifier.padding(6.dp), onMaximize = { panel = Panel.RadioFull }) { panel = Panel.MusicSettings }
                                 Expanded.MAP -> {
                                     val app = mapApp(d, apps)
                                     MapExpanded(d, from?.data ?: "", app, onPlace = { navigateTo(context, app, it) }, onNavigate = { actions.onNavigate(app) }, close = close, Modifier.padding(6.dp))
@@ -644,6 +646,9 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
         when (val p = panel) {
             null -> Unit
             Panel.Drawer -> DrawerPanel(d, apps, close = { panel = null })
+            Panel.RadioFull -> PanelScaffold(stringResource(R.string.tile_radio), close = { panel = null }) {
+                PlayerBrowser(PlayerSource.RADIO, { panel = null }, Modifier.fillMaxSize())
+            }
             Panel.Settings, Panel.Updates, Panel.Workshop, Panel.MusicSettings, Panel.TiresSettings -> SettingsPanel(
                 d,
                 revision = revision,
@@ -977,7 +982,8 @@ private fun MusicBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier =
 
 /** La radio en grande: FM o internet y, si está prendida, las estaciones por internet. */
 @Composable
-private fun RadioBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier = Modifier, onSettings: () -> Unit) = RadioExpanded(
+private fun RadioBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier = Modifier, onMaximize: () -> Unit, onSettings: () -> Unit) = RadioExpanded(
     d.music, close = close, onSettings = onSettings, modifier,
+    onMaximize = onMaximize,
     browser = if (d.prefs.internetRadio) { picked -> PlayerBrowser(PlayerSource.RADIO, picked, Modifier.fillMaxSize()) } else null,
 )
