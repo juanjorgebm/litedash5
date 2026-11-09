@@ -470,7 +470,7 @@ public class RecorderService extends Service implements SensorEventListener {
     private String lastNotif = "";
 
     private void updateNotification() {
-        String s = recording ? "● Grabando" : !accOn ? "Carro apagado" : !armed ? "Desactivada"
+        String s = recording ? "Grabando" : !accOn ? "Carro apagado" : !armed ? "Desactivada"
                 : moving ? "En movimiento" : "Lista · carro detenido";
         if (s.equals(lastNotif)) return;
         lastNotif = s;

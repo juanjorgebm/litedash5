@@ -8,7 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.widget.RemoteViews;
 
-/** Widget de un botón: "● GRABAR" cuando está libre, "■ DETENER" (rojo) mientras graba. */
+/** Widget de un botón: círculo rojo + GRABAR cuando está libre, cuadro + DETENER (fondo rojo) mientras graba. */
 public class RecordWidget extends AppWidgetProvider {
 
     @Override
@@ -20,7 +20,9 @@ public class RecordWidget extends AppWidgetProvider {
 
     static void render(Context c, boolean recording, String sub) {
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget);
-        v.setTextViewText(R.id.widget_label, recording ? "■ DETENER" : "● GRABAR");
+        // Iconos dibujados: la letra del sistema de esta pantalla no trae ● ni ■ (salía un cuadrito).
+        v.setTextViewText(R.id.widget_label, recording ? "DETENER" : "GRABAR");
+        v.setImageViewResource(R.id.widget_icon, recording ? R.drawable.ic_stop : R.drawable.ic_rec);
         v.setTextViewText(R.id.widget_sub, sub);
         v.setInt(R.id.widget_root, "setBackgroundResource", recording ? R.drawable.widget_rec : R.drawable.widget_idle);
         Intent i = new Intent(c, RecorderService.class).setAction(RecorderService.ACTION_TOGGLE);

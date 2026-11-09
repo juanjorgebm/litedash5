@@ -77,7 +77,7 @@ public class MainActivity extends Activity {
         TextView brand = text("Dashcam", 20, AMBER);
         brand.setPadding(dp(8), 0, 0, dp(16));
         rail.addView(brand);
-        String[] names = {"●  Grabar", "▶  Videos", "≡  Ajustes"};
+        String[] names = {"Grabar", "Videos", "Ajustes"};
         tabButtons = new TextView[names.length];
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
@@ -136,7 +136,9 @@ public class MainActivity extends Activity {
         detail.setPadding(0, dp(4), 0, dp(16));
         left.addView(detail);
 
-        recButton = text("●  GRABAR", 28, Color.WHITE);
+        recButton = text("GRABAR", 28, Color.WHITE);
+        recButton.setCompoundDrawablePadding(dp(16));
+        setRecIcon(false);
         recButton.setGravity(Gravity.CENTER);
         recButton.setTypeface(Typeface.DEFAULT_BOLD);
         recButton.setOnClickListener(new View.OnClickListener() {
@@ -185,7 +187,8 @@ public class MainActivity extends Activity {
                 File f = getItem(pos);
                 RecorderService s = RecorderService.instance;
                 boolean live = s != null && f.equals(s.currentFile);
-                t.setText("▶   " + Storage.label(f) + (live ? "   ● grabando" : ""));
+                t.setText(Storage.label(f) + (live ? "   · grabando" : ""));
+                t.setPadding(dp(20), 0, dp(20), 0);
                 t.setTextColor(live ? RED : Color.WHITE);
                 t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
                 t.setMinHeight(dp(60));
@@ -326,7 +329,7 @@ public class MainActivity extends Activity {
                 long now = SystemClock.elapsedRealtime();
                 if (s.recording) {
                     long sec = (now - s.recordingSince) / 1000;
-                    String st = String.format(Locale.US, "●  Grabando  %d:%02d", sec / 60, sec % 60);
+                    String st = String.format(Locale.US, "Grabando  %d:%02d", sec / 60, sec % 60);
                     if (s.forcedUntil > now) st += "  (clip)";
                     status.setText(st);
                     status.setTextColor(RED);
@@ -338,7 +341,8 @@ public class MainActivity extends Activity {
                             : "Lista · carro detenido");
                 }
                 boolean active = s.recording || s.forcedUntil > now;
-                recButton.setText(active ? "■  DETENER" : "●  GRABAR");
+                recButton.setText(active ? "DETENER" : "GRABAR");
+                setRecIcon(active);
                 recButton.setBackground(active ? pressable(RED, Color.WHITE) : pressable(SLATE, AMBER));
                 String vib = String.format(Locale.US, "Vibración %.3f  (últimos 10 s: %.3f – %.3f)  ·  %s",
                         s.vibration, s.vibMin10 > 8 ? 0 : s.vibMin10, s.vibMax10, s.moving ? "en marcha" : "detenido");
@@ -410,7 +414,8 @@ public class MainActivity extends Activity {
                         if (available != null) {
                             updateButton.setText("Actualizar a " + available[1]);
                             // Aviso visible en la pestaña Ajustes.
-                            tabButtons[2].setText("≡  Ajustes  •");
+                            tabButtons[2].setText("Ajustes  (nueva versión)");
+                            tabButtons[2].setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
                         }
                     }
                 });
@@ -479,6 +484,27 @@ public class MainActivity extends Activity {
         s.addState(new int[]{android.R.attr.state_pressed}, box(AMBER, AMBER, 14));
         s.addState(new int[]{}, box(fill, stroke, 14));
         return s;
+    }
+
+    private Boolean recIconActive;
+
+    /** Círculo rojo (grabar) o cuadro blanco (detener), dibujados: la letra del sistema no trae ● ni ■. */
+    private void setRecIcon(boolean active) {
+        if (recIconActive != null && recIconActive == active) return;
+        recIconActive = active;
+        GradientDrawable g = new GradientDrawable();
+        if (active) {
+            g.setShape(GradientDrawable.RECTANGLE);
+            g.setColor(Color.WHITE);
+            g.setCornerRadius(dp(4));
+            g.setSize(dp(28), dp(28));
+        } else {
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(RED);
+            g.setStroke(dp(3), Color.WHITE);
+            g.setSize(dp(34), dp(34));
+        }
+        recButton.setCompoundDrawablesWithIntrinsicBounds(g, null, null, null);
     }
 
     private int dp(int v) {

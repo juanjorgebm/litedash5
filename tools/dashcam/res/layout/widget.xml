@@ -5,21 +5,32 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_idle"
     android:gravity="center"
-    android:orientation="vertical"
+    android:orientation="horizontal"
     android:padding="6dp">
-    <TextView
-        android:id="@+id/widget_label"
+    <ImageView
+        android:id="@+id/widget_icon"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_marginRight="12dp"
+        android:src="@drawable/ic_rec" />
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="● GRABAR"
-        android:textColor="#FFFFFF"
-        android:textSize="22sp"
-        android:textStyle="bold" />
-    <TextView
-        android:id="@+id/widget_sub"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Dashcam"
-        android:textColor="#DDDDDD"
-        android:textSize="14sp" />
+        android:orientation="vertical">
+        <TextView
+            android:id="@+id/widget_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GRABAR"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/widget_sub"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Dashcam"
+            android:textColor="#DDDDDD"
+            android:textSize="14sp" />
+    </LinearLayout>
 </LinearLayout>
