@@ -291,8 +291,8 @@ class Preferences(context: Context) {
     /** En pantalla dividida, al lado del mapa va la carretera (si no, el auto 3D). */
     var splitRoad by bool(PrefKeys.SPLIT_ROAD, false)
 
-    /** Radio por internet con las estaciones de cerca (apagada de fábrica). */
-    var internetRadio by bool(PrefKeys.INTERNET_RADIO, false)
+    /** Radio por internet con las estaciones de cerca (encendida de fábrica en esta versión; quien la apagó la conserva apagada). */
+    var internetRadio by bool(PrefKeys.INTERNET_RADIO, true)
 
     /** Mantener activo el Bluetooth de la pantalla del carro y que reconecte el celular al encender. */
     var keepBluetooth by bool(PrefKeys.KEEP_BLUETOOTH, false)

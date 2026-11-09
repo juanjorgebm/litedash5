@@ -780,4 +780,5 @@
     <string name="compass_w">O</string>
     <string name="nav_need_notifications">Para ver los giros de Waze o Maps, toca aquí y da acceso a notificaciones a LiteDash</string>
     <string name="compass_pick">Toca hacia dónde mira el carro ahora</string>
+    <string name="offline_notice">Sin internet · toca para conectar el Wi‑Fi</string>
 </resources>

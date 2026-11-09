@@ -537,7 +537,11 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
                     if (projection != null) d.apps.open(railContext, projection) else panel = Panel.Drawer
                 },
                 onMusic = { expanded = Expanded.MUSIC },
-                onRadio = { if (d.music.sourceApps[SourceKind.RADIO] != null) d.music.openRadioApp() else expanded = Expanded.RADIO },
+                onRadio = {
+                    // Con la radio por internet encendida, el botón abre esa (no la FM de la pantalla).
+                    if (d.prefs.internetRadio) { d.music.radioInternet = true; expanded = Expanded.RADIO }
+                    else if (d.music.sourceApps[SourceKind.RADIO] != null) d.music.openRadioApp() else expanded = Expanded.RADIO
+                },
                 onPhone = { openDialer(railContext) },
                 onApps = { panel = Panel.Drawer },
                 onSettings = { panel = Panel.Settings },
@@ -757,8 +761,15 @@ private val TOP_BAR_HIDDEN = 12.dp
 @Composable
 private fun TopBar(editing: Boolean, showTime: Boolean, driverName: String?, weather: WeatherRepository, onAdd: () -> Unit, onTemplates: () -> Unit, onFinish: () -> Unit) {
     val c = LocalColors.current
+    val context = LocalContext.current
+    val offline = rememberOffline()
     // Sin nada que mostrar (la hora ya está en una pieza), la barra no aparta espacio: el tablero sube.
-    if (!editing && !showTime) return Spacer(Modifier.height(TOP_BAR_HIDDEN))
+    if (!editing && !showTime) {
+        if (!offline) return Spacer(Modifier.height(TOP_BAR_HIDDEN))
+        return Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp), contentAlignment = Alignment.CenterStart) {
+            OfflineNotice { openWifiSettings(context) }
+        }
+    }
     Row(
         Modifier.fillMaxWidth().height(topBarHeight()).padding(horizontal = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -774,7 +785,8 @@ private fun TopBar(editing: Boolean, showTime: Boolean, driverName: String?, wea
             // Fecha a la izquierda, hora grande al centro e indicadores de conexión a la derecha.
             val hello = greeting(driverName)
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                Label(if (hello != null) "$hello · ${clock.date}" else clock.date, Typography.body, c.textMuted, maxLines = 1)
+                if (offline) OfflineNotice { openWifiSettings(context) }
+                else Label(if (hello != null) "$hello · ${clock.date}" else clock.date, Typography.body, c.textMuted, maxLines = 1)
             }
             Label(clock.full, Typography.title, maxLines = 1)
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { StatusIcons() }

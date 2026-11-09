@@ -10,6 +10,7 @@ import android.content.IntentFilter
 import android.os.Looper
 import android.os.Handler
 import android.database.ContentObserver
+import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +40,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.irvingguerra.litedash.core.ui.Card
 import com.irvingguerra.litedash.core.ui.Icon
 import com.irvingguerra.litedash.core.ui.Icons
@@ -51,19 +55,38 @@ import com.irvingguerra.litedash.core.ui.Typography
  * se abre el ajuste del sistema.
  */
 
-/** Wi‑Fi: encendido, apagado o cambiando (null). */
+/**
+ * Wi‑Fi: encendido, apagado o cambiando (null). El estado combina lo que dice el Wi‑Fi de Android con si hay una red Wi‑Fi
+ * conectada de verdad (la pantalla del carro maneja el suyo y a veces no avisa). Al tocar se intenta cambiarlo y, si pasados 3 s
+ * no cambió (la pantalla no deja a las apps), se abre el ajuste de Wi‑Fi del sistema.
+ */
 @Composable
 fun WifiToggleTile() {
     val context = LocalContext.current
     val wifi = remember { ContextCompat.getSystemService(context.applicationContext, WifiManager::class.java) }
-    var on by remember { mutableStateOf(wifi?.isWifiEnabled) }
-    SystemBroadcast(WifiManager.WIFI_STATE_CHANGED_ACTION) { on = wifi?.isWifiEnabled }
+    val connectivity = remember { ContextCompat.getSystemService(context.applicationContext, ConnectivityManager::class.java) }
+    fun read(): Boolean? {
+        @Suppress("DEPRECATION")
+        val connected = runCatching { connectivity?.getNetworkInfo(ConnectivityManager.TYPE_WIFI)?.isConnected }.getOrNull() == true
+        return if (connected) true else runCatching { wifi?.isWifiEnabled }.getOrNull()
+    }
+    var on by remember { mutableStateOf(read()) }
+    val scope = rememberCoroutineScope()
+    SystemBroadcast(WifiManager.WIFI_STATE_CHANGED_ACTION) { on = read() }
+    @Suppress("DEPRECATION")
+    SystemBroadcast(ConnectivityManager.CONNECTIVITY_ACTION) { on = read() }
     ToggleTile(Icons.wifi, stringResource(R.string.tile_wifi), on, null) {
         val target = on != true
         @Suppress("DEPRECATION") // en Android 10+ no hace nada: ahí se abre el ajuste
-        val done = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && wifi != null &&
+        val tried = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && wifi != null &&
             runCatching { wifi.setWifiEnabled(target) }.getOrDefault(false)
-        if (done) on = target else openSettings(context, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Settings.Panel.ACTION_WIFI else Settings.ACTION_WIFI_SETTINGS)
+        if (!tried) return@ToggleTile openWifiSettings(context)
+        on = null // cambiando
+        scope.launch {
+            delay(3_000)
+            on = read()
+            if (on != target) openWifiSettings(context)
+        }
     }
 }
 
@@ -119,6 +142,9 @@ private fun readCarBluetooth(context: Context): CarBluetooth = runCatching {
         Settings.System.getString(r, "BTAudio").equals("Connected", ignoreCase = true)
     CarBluetooth(on = state?.let { it == 12 || phone }, phone = phone)
 }.getOrDefault(CarBluetooth(null, false))
+
+internal fun openWifiSettings(context: Context) =
+    openSettings(context, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Settings.Panel.ACTION_WIFI else Settings.ACTION_WIFI_SETTINGS)
 
 private fun openSettings(context: Context, action: String) {
     val tries = listOf(Intent(action), Intent(Settings.ACTION_WIRELESS_SETTINGS), Intent(Settings.ACTION_SETTINGS))
