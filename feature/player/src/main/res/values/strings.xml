@@ -42,4 +42,8 @@
     <string name="radio_genres">Géneros</string>
     <string name="radio_back">Volver</string>
     <string name="radio_count">%1$d estaciones</string>
+    <string name="radio_checking">Comprobando qué emisoras suenan…</string>
+    <string name="radio_checking_n">Comprobando… %1$d suenan</string>
+    <string name="radio_fav_added">%1$s: guardada en favoritas</string>
+    <string name="radio_fav_removed">%1$s: quitada de favoritas</string>
 </resources>

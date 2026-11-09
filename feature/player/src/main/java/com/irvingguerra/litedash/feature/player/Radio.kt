@@ -156,6 +156,38 @@ object Radio {
         return emptyList()
     }
 
+    // Lo que se probó: id → (suena, cuándo). Se reutiliza 15 minutos.
+    private val probed = java.util.concurrent.ConcurrentHashMap<String, Pair<Boolean, Long>>()
+    private const val PROBE_TTL_MS = 15 * 60_000L
+
+    /**
+     * ¿[station] suena ahora? Se abre su flujo y se leen unos bytes (muchas del directorio ya no contestan o devuelven
+     * una página web). Llamarla fuera del hilo principal; el resultado se recuerda un rato.
+     */
+    fun isAlive(context: Context, station: Station): Boolean {
+        val now = System.currentTimeMillis()
+        probed[station.id]?.takeIf { now - it.second < PROBE_TTL_MS }?.let { return it.first }
+        val ok = runCatching { probe(context, station.uri.toString()) }.getOrDefault(false)
+        probed[station.id] = ok to now
+        return ok
+    }
+
+    private fun probe(context: Context, url: String): Boolean {
+        val c = Https.open(context, url).apply {
+            connectTimeout = 4_000
+            readTimeout = 4_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", USER_AGENT)
+        }
+        try {
+            if (c.responseCode !in 200..299) return false
+            if (c.contentType.orEmpty().lowercase().startsWith("text/html")) return false
+            return c.inputStream.use { it.read(ByteArray(2048)) } > 0
+        } finally {
+            c.disconnect()
+        }
+    }
+
     /** Le dice a Radio Browser que alguien sintonizó [station] (así ordena las populares); sin esperar respuesta. */
     fun countClick(context: Context, station: Station) {
         Thread {

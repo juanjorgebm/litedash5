@@ -95,8 +95,11 @@ import com.irvingguerra.litedash.feature.music.RadioExpanded
 import com.irvingguerra.litedash.feature.music.RadioTile
 import com.irvingguerra.litedash.feature.navigation.NavigationRepository
 import com.irvingguerra.litedash.feature.obd.ObdRepository
+import com.irvingguerra.litedash.feature.player.Player
 import com.irvingguerra.litedash.feature.player.PlayerBrowser
 import com.irvingguerra.litedash.feature.player.PlayerSource
+import com.irvingguerra.litedash.feature.player.RadioFavorites
+import com.irvingguerra.litedash.feature.player.Station
 import com.irvingguerra.litedash.feature.tpms.TpmsRepository
 import com.irvingguerra.litedash.feature.updater.Updater
 import kotlinx.coroutines.delay
@@ -982,8 +985,16 @@ private fun MusicBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier =
 
 /** La radio en grande: FM o internet y, si está prendida, las estaciones por internet. */
 @Composable
-private fun RadioBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier = Modifier, onMaximize: () -> Unit, onSettings: () -> Unit) = RadioExpanded(
-    d.music, close = close, onSettings = onSettings, modifier,
-    onMaximize = onMaximize,
-    browser = if (d.prefs.internetRadio) { picked -> PlayerBrowser(PlayerSource.RADIO, picked, Modifier.fillMaxSize()) } else null,
-)
+private fun RadioBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier = Modifier, onMaximize: () -> Unit, onSettings: () -> Unit) {
+    val context = LocalContext.current
+    // La estrella de lo que suena: solo si es una estación de internet.
+    val station = Player.state.current as? Station
+    val favorite = if (d.prefs.internetRadio && station != null) RadioFavorites.isFavorite(context, station.id) else null
+    RadioExpanded(
+        d.music, close = close, onSettings = onSettings, modifier,
+        onMaximize = onMaximize,
+        browser = if (d.prefs.internetRadio) { picked -> PlayerBrowser(PlayerSource.RADIO, picked, Modifier.fillMaxSize()) } else null,
+        favorite = favorite,
+        onFavorite = station?.let { st -> { RadioFavorites.toggle(context, st) } },
+    )
+}

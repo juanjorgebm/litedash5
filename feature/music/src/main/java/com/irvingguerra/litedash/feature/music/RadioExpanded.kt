@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.irvingguerra.litedash.core.ui.Button
 import com.irvingguerra.litedash.core.ui.Icon
+import com.irvingguerra.litedash.core.ui.IconButton
 import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
@@ -43,6 +45,9 @@ fun RadioExpanded(
     browser: (@Composable (onPicked: () -> Unit) -> Unit)? = null,
     /** Abre la radio por internet a pantalla completa (null = sin botón). */
     onMaximize: (() -> Unit)? = null,
+    /** Si lo que suena es una estación de internet: si ya es favorita (null = sin estrella) y cómo cambiarla. */
+    favorite: Boolean? = null,
+    onFavorite: (() -> Unit)? = null,
 ) {
     val c = LocalColors.current
     val song = repo.radio.song
@@ -84,7 +89,7 @@ fun RadioExpanded(
             return@ExpandedCard
         }
         val onIdle: () -> Unit = { if (canBrowse) browsing = true }
-        NowPlaying(song, Icons.radio, wide, artworkMax) { Details(repo, song, onIdle, it) }
+        NowPlaying(song, Icons.radio, wide, artworkMax) { Details(repo, song, onIdle, favorite, onFavorite, it) }
     }
 }
 
@@ -102,7 +107,7 @@ private fun NoRadio(onSettings: () -> Unit, modifier: Modifier) {
 }
 
 @Composable
-private fun Details(repo: MusicRepository, song: Song?, onIdle: () -> Unit, modifier: Modifier) {
+private fun Details(repo: MusicRepository, song: Song?, onIdle: () -> Unit, favorite: Boolean?, onFavorite: (() -> Unit)?, modifier: Modifier) {
     val opening = repo.radio.starting
     Column(modifier) {
         val title = when {
@@ -121,7 +126,14 @@ private fun Details(repo: MusicRepository, song: Song?, onIdle: () -> Unit, modi
         BigTitle(title, subtitle, error != null)
         Spacer(Modifier.height(10.dp))
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            RadioControls(repo, song, onIdle, size = 64.dp, playSize = 80.dp, gap = 16.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioControls(repo, song, onIdle, size = 64.dp, playSize = 80.dp, gap = 16.dp)
+                // La estrella: guardar lo que suena en favoritas con un toque.
+                if (favorite != null && onFavorite != null) {
+                    Spacer(Modifier.width(20.dp))
+                    IconButton(if (favorite) Icons.starFilled else Icons.star, onFavorite, size = 64.dp, color = if (favorite) LocalColors.current.accent else LocalColors.current.textMuted)
+                }
+            }
         }
     }
 }

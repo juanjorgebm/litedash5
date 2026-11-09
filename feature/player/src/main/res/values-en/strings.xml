@@ -42,4 +42,8 @@
     <string name="radio_genres">Genres</string>
     <string name="radio_back">Back</string>
     <string name="radio_count">%1$d stations</string>
+    <string name="radio_checking">Checking which stations work…</string>
+    <string name="radio_checking_n">Checking… %1$d working</string>
+    <string name="radio_fav_added">%1$s: saved to favorites</string>
+    <string name="radio_fav_removed">%1$s: removed from favorites</string>
 </resources>

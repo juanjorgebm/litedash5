@@ -3,10 +3,13 @@ package com.irvingguerra.litedash.feature.player
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +54,9 @@ import com.irvingguerra.litedash.core.ui.Typography
 import com.irvingguerra.litedash.feature.music.Drive
 import com.irvingguerra.litedash.feature.music.Drives
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 /**
@@ -210,7 +216,8 @@ private fun groupName(group: Group, name: String): String = when {
 
 // --- Radio por internet ---
 
-private enum class RadioTab(val title: Int) { NEARBY(R.string.radio_nearby), FAVORITES(R.string.radio_favorites), EXPLORE(R.string.radio_explore), SEARCH(R.string.radio_search_tab) }
+// Favoritas primero: es la lista principal y con la que se abre siempre.
+private enum class RadioTab(val title: Int) { FAVORITES(R.string.radio_favorites), NEARBY(R.string.radio_nearby), EXPLORE(R.string.radio_explore), SEARCH(R.string.radio_search_tab) }
 
 /** Pestaña y búsqueda de la radio: al cerrar y abrir la biblioteca sigue donde estaba. */
 private object RadioBrowserMemory {
@@ -229,7 +236,9 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
     val memory = RadioBrowserMemory
     val tab = memory.tab
     val query = memory.query
-    var favorites by remember { mutableStateOf(store.favorites()) }
+    // Cada vez que se abre la radio se empieza en favoritas.
+    LaunchedEffect(Unit) { memory.tab = RadioTab.FAVORITES }
+    val favorites = RadioFavorites.list(context)
     val here = remember { Radio.here(context) }
     // null = buscando; la lista (y si salió por ubicación o por país).
     // Si los servidores no contestan, la última lista que sí llegó (guardada).
@@ -245,8 +254,8 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
         if (favorites.isNotEmpty()) { store.favoritesSeeded = true; return@LaunchedEffect }
         val top = withContext(Dispatchers.IO) { Radio.country(context) }.take(SEED_FAVORITES)
         if (top.isEmpty()) return@LaunchedEffect // sin red: se intenta la próxima vez
-        favorites = top
         store.setFavorites(top)
+        RadioFavorites.refresh()
         store.favoritesSeeded = true
     }
     val found by produceState<List<Station>?>(null, query) {
@@ -266,10 +275,14 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
         if (opened == null) return@produceState
         value = withContext(Dispatchers.IO) { if (opened.genre) Radio.byTag(context, opened.code) else Radio.byCountry(context, opened.code) }
     }
+    // Solo las que suenan ahora: se prueban de 10 en 10 y van saliendo en la lista.
+    val (workingNearby, checkingNearby) = rememberWorking(nearby)
+    val (workingFound, checkingFound) = rememberWorking(found)
+    val (workingExploring, checkingExploring) = rememberWorking(exploring)
     val playing = Player.state.current?.key
     fun toggleFavorite(s: Station) {
-        favorites = if (favorites.any { it.id == s.id }) favorites.filter { it.id != s.id } else favorites + s
-        store.setFavorites(favorites)
+        val added = RadioFavorites.toggle(context, s)
+        Toast.makeText(context, context.getString(if (added) R.string.radio_fav_added else R.string.radio_fav_removed, s.name), Toast.LENGTH_SHORT).show()
     }
     fun play(list: List<Station>, s: Station) {
         store.rememberStation(s)
@@ -281,11 +294,12 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
         Segmented(RadioTab.entries.map { it to stringResource(it.title) }, tab, { memory.tab = it })
         Spacer(Modifier.height(10.dp))
         val (list, empty) = when (tab) {
-            RadioTab.NEARBY -> nearby to stringResource(if (nearby == null) R.string.radio_loading else R.string.radio_none)
+            RadioTab.NEARBY -> workingNearby to stringResource(if (nearby == null || checkingNearby) R.string.radio_checking else R.string.radio_none)
             RadioTab.FAVORITES -> favorites to stringResource(R.string.radio_no_favorites)
-            RadioTab.EXPLORE -> exploring to stringResource(if (exploring == null) R.string.radio_loading else R.string.radio_none)
-            RadioTab.SEARCH -> found to stringResource(if (query.length < 2) R.string.radio_search_help else if (found == null) R.string.radio_loading else R.string.radio_none)
+            RadioTab.EXPLORE -> workingExploring to stringResource(if (exploring == null) R.string.radio_loading else if (checkingExploring) R.string.radio_checking else R.string.radio_none)
+            RadioTab.SEARCH -> workingFound to stringResource(if (query.length < 2) R.string.radio_search_help else if (found == null) R.string.radio_loading else if (checkingFound) R.string.radio_checking else R.string.radio_none)
         }
+        val checking = when (tab) { RadioTab.NEARBY -> checkingNearby; RadioTab.EXPLORE -> checkingExploring; RadioTab.SEARCH -> checkingFound; else -> false }
         if (tab == RadioTab.EXPLORE) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (opened == null) {
@@ -316,6 +330,10 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
             Spacer(Modifier.height(6.dp))
         }
         if (list.isNullOrEmpty()) return Label(empty, Typography.body, c.textMuted)
+        if (checking) {
+            Label(stringResource(R.string.radio_checking_n, list.size), Typography.small, c.textMuted)
+            Spacer(Modifier.height(6.dp))
+        }
         LazyColumn(Modifier.fillMaxSize()) {
             items(list, key = { it.id }) { s ->
                 val km = if (here != null) s.distanceKm(here.latitude, here.longitude) else null
@@ -323,15 +341,43 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
                 BrowserRow(Icons.radio, s.name, detail, selected = s.key == playing, trailing = {
                     val fav = favorites.any { it.id == s.id }
                     IconButton(if (fav) Icons.starFilled else Icons.star, { toggleFavorite(s) }, size = 44.dp, color = if (fav) c.accent else c.textMuted)
-                }) { play(list, s) }
+                }, onLongClick = { toggleFavorite(s) }) { play(list, s) }
             }
         }
     }
 }
 
+/**
+ * De [source] (lo que dio el directorio) deja solo las estaciones que suenan ahora: las prueba de 10 en 10, en orden de
+ * popularidad, y la lista va creciendo; para al juntar [WORKING_MAX]. El segundo valor es si sigue comprobando.
+ */
+@Composable
+private fun rememberWorking(source: List<Station>?): Pair<List<Station>?, Boolean> {
+    val context = LocalContext.current
+    val state by produceState<Pair<List<Station>?, Boolean>>(null to false, source) {
+        if (source == null) { value = null to false; return@produceState }
+        val ok = ArrayList<Station>()
+        value = emptyList<Station>() to true
+        withContext(Dispatchers.IO) {
+            for (batch in source.take(WORKING_SCAN).chunked(10)) {
+                if (ok.size >= WORKING_MAX) break
+                val checked = coroutineScope { batch.map { st -> async { st to Radio.isAlive(context, st) } }.awaitAll() }
+                ok += checked.filter { it.second }.map { it.first }
+                value = ok.toList() to true
+            }
+        }
+        value = ok.toList() to false
+    }
+    return state
+}
+
+private const val WORKING_SCAN = 100
+private const val WORKING_MAX = 40
+
 /** Un renglón de la lista: ícono, título, detalle y, si lo hay, algo a la derecha (la estrella). */
 @Composable
-private fun BrowserRow(icon: ImageVector, title: String, detail: String, selected: Boolean, trailing: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun BrowserRow(icon: ImageVector, title: String, detail: String, selected: Boolean, trailing: (@Composable () -> Unit)? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val c = LocalColors.current
     Row(
         Modifier
@@ -339,7 +385,7 @@ private fun BrowserRow(icon: ImageVector, title: String, detail: String, selecte
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(Radius.inner))
             .background(if (selected) c.surfaceHigh else c.surface)
-            .clickable(onClick = onClick)
+            .combinedClickable(onLongClick = onLongClick, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

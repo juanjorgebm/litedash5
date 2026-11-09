@@ -86,6 +86,7 @@ object Player {
     private var player: MediaPlayer? = null
     /** Radio AAC en vivo (lo que MediaPlayer no sabe arrancar); null si suena por [player]. */
     private var aac: AacStream? = null
+    private var proxy: StreamProxy? = null
     private var session: MediaSession? = null
     private var focus: AudioFocusRequest? = null
     private var ducked = false
@@ -145,6 +146,8 @@ object Player {
         player = null
         aac?.stop()
         aac = null
+        proxy?.close()
+        proxy = null
     }
 
     fun toggle() = if (state.playing) pause() else resume()
@@ -239,7 +242,15 @@ object Player {
         player = p
         io.execute {
             try {
-                p.setDataSource(app, item.uri)
+                val remote = item.uri.toString()
+                if (item is Station && StreamProxy.needed(remote)) {
+                    // Android 5 a 7.1: sin los certificados de Let's Encrypt, la radio pasa por un puente local.
+                    val bridge = StreamProxy(app, remote).also { it.start() }
+                    main.post { if (myLoad == load) proxy = bridge else bridge.close() }
+                    p.setDataSource(bridge.localUrl)
+                } else {
+                    p.setDataSource(app, item.uri)
+                }
                 p.prepareAsync()
             } catch (x: Exception) {
                 main.post { if (myLoad == load) { Log.w("LiteDash", "MediaPlayer: ${x.message}"); fail(app.getString(R.string.player_cannot_play)) } }
