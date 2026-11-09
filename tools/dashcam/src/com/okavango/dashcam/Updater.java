@@ -30,8 +30,8 @@ final class Updater {
     }
 
     /** Devuelve {código, nombre} de la última versión publicada. Se llama fuera del hilo principal. */
-    static String[] latest() throws Exception {
-        HttpURLConnection con = open(BASE + "version.txt?t=" + System.currentTimeMillis());
+    static String[] latest(Context c) throws Exception {
+        HttpURLConnection con = open(c, BASE + "version.txt?t=" + System.currentTimeMillis());
         try {
             BufferedReader r = new BufferedReader(new InputStreamReader(con.getInputStream(), "UTF-8"));
             String line = r.readLine();
@@ -49,7 +49,7 @@ final class Updater {
         File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
         dir.mkdirs();
         File apk = new File(dir, "dashcam-okavango.apk");
-        HttpURLConnection con = open(BASE + "dashcam-okavango.apk?t=" + System.currentTimeMillis());
+        HttpURLConnection con = open(c, BASE + "dashcam-okavango.apk?t=" + System.currentTimeMillis());
         try {
             int total = con.getContentLength();
             InputStream in = con.getInputStream();
@@ -74,10 +74,43 @@ final class Updater {
         c.startActivity(i);
     }
 
-    private static HttpURLConnection open(String url) throws Exception {
+    private static volatile javax.net.ssl.SSLSocketFactory factory;
+
+    /**
+     * Android 5.1 no trae las raíces que usan hoy GitHub y su servidor de descargas (Let's Encrypt
+     * ISRG X1/X2, USERTrust, Sectigo R46/E46, DigiCert G2): se confía en las del sistema MÁS esas,
+     * que van en res/raw/roots.pem.
+     */
+    private static javax.net.ssl.SSLSocketFactory factory(Context c) throws Exception {
+        if (factory != null) return factory;
+        java.security.KeyStore store = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType());
+        store.load(null, null);
+        java.security.KeyStore system = java.security.KeyStore.getInstance("AndroidCAStore");
+        system.load(null, null);
+        java.util.Enumeration<String> aliases = system.aliases();
+        while (aliases.hasMoreElements()) {
+            String a = aliases.nextElement();
+            store.setCertificateEntry(a, system.getCertificate(a));
+        }
+        InputStream in = c.getResources().openRawResource(R.raw.roots);
+        int i = 0;
+        for (java.security.cert.Certificate cert : java.security.cert.CertificateFactory.getInstance("X.509").generateCertificates(in)) {
+            store.setCertificateEntry("extra-" + i++, cert);
+        }
+        in.close();
+        javax.net.ssl.TrustManagerFactory tmf = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(store);
+        javax.net.ssl.SSLContext ctx = javax.net.ssl.SSLContext.getInstance("TLS");
+        ctx.init(null, tmf.getTrustManagers(), null);
+        factory = ctx.getSocketFactory();
+        return factory;
+    }
+
+    private static HttpURLConnection open(Context c, String url) throws Exception {
         // GitHub redirige a otro servidor (https → https); se siguen las redirecciones a mano por si acaso.
         for (int hops = 0; hops < 5; hops++) {
             HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+            if (con instanceof javax.net.ssl.HttpsURLConnection) ((javax.net.ssl.HttpsURLConnection) con).setSSLSocketFactory(factory(c));
             con.setConnectTimeout(15000);
             con.setReadTimeout(30000);
             con.setInstanceFollowRedirects(false);

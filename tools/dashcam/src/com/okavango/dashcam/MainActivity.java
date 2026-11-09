@@ -390,7 +390,7 @@ public class MainActivity extends Activity {
             public void run() {
                 String msg;
                 try {
-                    String[] l = Updater.latest();
+                    String[] l = Updater.latest(MainActivity.this);
                     if (Integer.parseInt(l[0]) > Updater.currentCode(MainActivity.this)) {
                         available = l;
                         msg = "Hay una versión nueva: " + l[1] + " (tienes " + Updater.currentName(MainActivity.this) + ")";
