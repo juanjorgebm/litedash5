@@ -51,6 +51,8 @@ public class RecorderService extends Service implements SensorEventListener {
     static final long SEGMENT_MS = 3 * 60 * 1000;
     static final long CLIP_MS = 60 * 1000;
 
+    static final String ACTION_TOGGLE = "com.okavango.dashcam.TOGGLE";
+
     static volatile RecorderService instance;
 
     // --- estado que lee la pantalla principal
@@ -122,6 +124,15 @@ public class RecorderService extends Service implements SensorEventListener {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_TOGGLE.equals(intent.getAction())) {
+            // Botón del widget: si graba, detiene; si no, graba ya (clip de 1 min que sigue solo si el carro va en marcha).
+            if (recording || forcedUntil > SystemClock.elapsedRealtime()) stopNow();
+            else {
+                if (!armed) setArmed(true);
+                recordClip();
+            }
+        }
+        lastWidget = null;
         return START_STICKY;
     }
 
@@ -190,6 +201,7 @@ public class RecorderService extends Service implements SensorEventListener {
             }
             writeCsv(now);
             updateNotification();
+            updateWidget();
             cam.postDelayed(this, 500);
         }
     };
@@ -431,6 +443,23 @@ public class RecorderService extends Service implements SensorEventListener {
             csv.write('\n');
             csv.flush();
         } catch (Throwable ignored) { }
+    }
+
+    private volatile String lastWidget;
+
+    String widgetSubtitle() {
+        if (recording) {
+            long sec = (SystemClock.elapsedRealtime() - recordingSince) / 1000;
+            return String.format(Locale.US, "grabando %d:%02d", sec / 60, sec % 60);
+        }
+        return !accOn ? "carro apagado" : !armed ? "automática apagada" : moving ? "en marcha" : "lista";
+    }
+
+    private void updateWidget() {
+        String key = recording + "|" + widgetSubtitle();
+        if (key.equals(lastWidget)) return;
+        lastWidget = key;
+        try { RecordWidget.render(this, recording, widgetSubtitle()); } catch (Throwable ignored) { }
     }
 
     private String lastNotif = "";
