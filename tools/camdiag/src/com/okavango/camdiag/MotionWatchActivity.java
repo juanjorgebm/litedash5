@@ -37,7 +37,7 @@ import java.util.Set;
  *   avm.overspeed, dvr.acc.overspeed, POWER_ON/OFF).
  * - Observa cambios en content://com.neusoft.optimus.mmi y en Settings.System.
  * - Muestra acelerómetro y giroscopio en vivo, con una estimación de "en movimiento" por vibración.
- * Guarda el registro en /sdcard/monitor_movimiento.txt y en la USB.
+ * Guarda movimiento_FECHA.txt/.csv en la memoria interna y en cada USB que encuentre.
  */
 public class MotionWatchActivity extends Activity implements SensorEventListener {
 
@@ -94,7 +94,7 @@ public class MotionWatchActivity extends Activity implements SensorEventListener
         TextView title = new TextView(this);
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        title.setText("Monitor de movimiento v2.5 (no usa la cámara): carro quieto 20 s con motor encendido, mete reversa 2 veces (5 s cada vez), maneja 5 min con paradas (semáforo), y apaga el carro al final.");
+        title.setText("Monitor de movimiento v2.6 (no usa la cámara): carro quieto 20 s con motor encendido, mete reversa 2 veces (5 s cada vez), maneja 5 min con paradas (semáforo), y apaga el carro al final.");
         root.addView(title);
         live = new TextView(this);
         live.setTextColor(Color.WHITE);
@@ -248,18 +248,25 @@ public class MotionWatchActivity extends Activity implements SensorEventListener
         public void run() { save(); ui.postDelayed(this, 15000); }
     };
 
+    /** Nombre con fecha y hora de inicio: cada vez que se abre el monitor crea archivos nuevos (no borra el viaje anterior). */
+    private final String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+
     private void save() {
         String data;
         synchronized (text) { data = text.toString(); }
-        File[] targets = {
-                new File(Environment.getExternalStorageDirectory(), "monitor_movimiento.txt"),
-                new File("/storage/usbotg/usbotg-sda2/monitor_movimiento.txt"),
-        };
         String csvData;
         synchronized (csv) { csvData = csv.toString(); }
-        for (File f : targets) {
-            write(f, data);
-            write(new File(f.getParentFile(), "monitor_movimiento.csv"), csvData);
+        java.util.List<File> dirs = new java.util.ArrayList<>();
+        dirs.add(Environment.getExternalStorageDirectory());
+        // La USB cambia de nombre al reconectarla (usbotg-sda1, usbotg-sda2…): se buscan todas.
+        for (String base : new String[]{"/storage/usbotg", "/mnt/media_rw"}) {
+            File[] list = new File(base).listFiles();
+            if (list == null) continue;
+            for (File d : list) if (d.isDirectory() && d.canWrite()) dirs.add(d);
+        }
+        for (File d : dirs) {
+            write(new File(d, "movimiento_" + stamp + ".txt"), data);
+            write(new File(d, "movimiento_" + stamp + ".csv"), csvData);
         }
     }
 
