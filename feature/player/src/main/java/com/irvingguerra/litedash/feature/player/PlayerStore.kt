@@ -9,6 +9,9 @@ private const val KEY_LAST_USB = "last_usb"
 private const val KEY_LAST_RADIO = "last_radio"
 private const val KEY_FAVORITES = "radio_favorites"
 private const val KEY_NEARBY = "radio_nearby"
+private const val KEY_RECENTS = "radio_recents"
+/** Cuántas emisoras recientes se recuerdan. */
+private const val RECENTS_KEEP = 20
 /** Ya se llenaron las favoritas con las de Costa Rica (una sola vez). */
 private const val KEY_FAVORITES_SEEDED = "radio_favorites_seeded"
 /** Cuántas estaciones de Costa Rica quedan de favoritas al estrenar. */
@@ -27,7 +30,19 @@ class PlayerStore(context: Context) {
     /** La última estación completa (para volver a sintonizarla sin buscar). */
     fun lastStation(): Station? = p.getString(KEY_LAST_RADIO_STATION, null)?.let { runCatching { Station.fromJson(org.json.JSONObject(it)) }.getOrNull() }
 
-    fun rememberStation(station: Station) = p.edit { putString(KEY_LAST_RADIO_STATION, station.toJson().toString()) }
+    fun rememberStation(station: Station) {
+        p.edit { putString(KEY_LAST_RADIO_STATION, station.toJson().toString()) }
+        // Y a la lista de recientes: la última arriba y sin repetir.
+        val list = listOf(station) + recents().filter { it.id != station.id }
+        p.edit { putString(KEY_RECENTS, JSONArray(list.take(RECENTS_KEEP).map { it.toJson() }).toString()) }
+        RadioRecents.refresh()
+    }
+
+    /** Las emisoras que se han escuchado, la más reciente primero. */
+    fun recents(): List<Station> = runCatching {
+        val array = JSONArray(p.getString(KEY_RECENTS, "[]"))
+        (0 until array.length()).mapNotNull { Station.fromJson(array.getJSONObject(it)) }
+    }.getOrDefault(emptyList())
 
     /** La última lista de "Cerca de ti" que llegó: se muestra si los servidores no contestan. */
     fun nearbyCache(): List<Station> = runCatching {

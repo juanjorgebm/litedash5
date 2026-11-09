@@ -129,6 +129,7 @@ internal fun playStation(context: Context, list: List<Station>, station: Station
 private enum class Page(val title: Int, val tab: RadioTab?) {
     NOW(R.string.radio_now_tab, null),
     FAVORITES(R.string.radio_favorites, RadioTab.FAVORITES),
+    RECENT(R.string.radio_recent, RadioTab.RECENT),
     NEARBY(R.string.radio_nearby, RadioTab.NEARBY),
     EXPLORE(R.string.radio_explore, RadioTab.EXPLORE),
     SEARCH(R.string.radio_search_tab, RadioTab.SEARCH),

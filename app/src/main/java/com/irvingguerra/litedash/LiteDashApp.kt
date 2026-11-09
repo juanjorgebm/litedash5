@@ -35,6 +35,9 @@ class LiteDashApp : Application() {
             returnHome = { MainActivity.bringToFront(this@LiteDashApp) } }
         OwnPlayer.wire(this, music, prefs)
         music.migrateUsbApp()
+        val trip = TripRepository(this, bus)
+        // El clima sigue dónde está el carro: usa la posición del GPS del viaje.
+        val weather = WeatherRepository(this, prefs).also { w -> w.positionHint = { trip.position } }
         Dependencies(
             apps = AppRepository(this).apply { opener = SplitScreen::open },
             music = music,
@@ -43,8 +46,8 @@ class LiteDashApp : Application() {
             dashboard = DashboardState(DashboardStore(this)),
             cars = CarRepository(this, BuildConfig.CATALOG_URL),
             updater = Updater(this, BuildConfig.UPDATES_URL, BuildConfig.VERSION_CODE.toLong()),
-            weather = WeatherRepository(this, prefs),
-            trip = TripRepository(this, bus),
+            weather = weather,
+            trip = trip,
             reminders = ReminderRepository(this),
             wheel = WheelKeys(this, prefs),
             stats = Stats(this) { prefs.stats },

@@ -117,6 +117,8 @@ sealed interface Panel {
     data object Drawer : Panel
     /** La radio por internet a pantalla completa: explorar por país, género o nombre. */
     data object RadioFull : Panel
+    /** El mapa a pantalla completa con los lugares cercanos; [data] es el aspecto de la pieza que se tocó. */
+    data class MapFull(val data: String) : Panel
     data object Settings : Panel
     /** Ajustes abiertos en Sistema → Actualizaciones (desde el aviso de versión nueva). */
     data object Updates : Panel
@@ -288,12 +290,13 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
         TileTypes.TIRES -> TiresTile(d, onOpen = actions.onTires, onSettings = { actions.onPanel(Panel.TiresSettings) })
         TileTypes.MAP -> {
             val app = mapApp(d, apps)
-            val expand = remember(p) { { actions.onExpand(Expanded.MAP, p) } }
+            // Un toque abre el mapa a pantalla completa con los lugares cercanos.
+            val expand = remember(p) { { actions.onPanel(Panel.MapFull(p.data)) } }
             MapTile(
                 d, p.data, app, editing = actions.editing(),
                 onPlace = remember(app) { { navigateTo(context, app, it) } },
                 onNavigate = remember(app) { { actions.onNavigate(app) } },
-                onExpand = if (p.fillsHalf(d.dashboard.grid)) null else expand,
+                onExpand = expand,
             )
         }
         TileTypes.FAVORITES -> FavoritesTile()
@@ -301,7 +304,7 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
             val navApp = mapApp(d, apps)
             CarNavTile(d, onOpen = remember(navApp) { { actions.onNavigate(navApp) } })
         }
-        TileTypes.COMPASS -> CompassTile()
+        TileTypes.COMPASS -> CompassTile(d)
         TileTypes.WIDGET -> WidgetTile(p.data)
         TileTypes.PHONE -> ShortcutTile(Icons.phone, stringResource(R.string.tile_phone), null) {
             openDialer(context)
@@ -651,6 +654,7 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
             null -> Unit
             Panel.Drawer -> DrawerPanel(d, apps, close = { panel = null })
             Panel.RadioFull -> RadioScreen({ panel = null }, Modifier.fillMaxSize())
+            is Panel.MapFull -> MapFullScreen(d, p.data, mapApp(d, apps), close = { panel = null })
             Panel.Settings, Panel.Updates, Panel.Workshop, Panel.MusicSettings, Panel.TiresSettings -> SettingsPanel(
                 d,
                 revision = revision,

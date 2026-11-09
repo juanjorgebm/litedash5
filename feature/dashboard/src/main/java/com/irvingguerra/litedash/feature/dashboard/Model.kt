@@ -154,7 +154,7 @@ object TileTypes {
     const val WIDGET = "widget"
     /** La guía de la navegación del carro (calle, giro, distancias, límite); viene por broadcast de Amap. */
     const val CAR_NAV = "car_nav"
-    /** Brújula con el rumbo del carro (sensor magnético de la pantalla o rumbo de la navegación). */
+    /** Brújula con el rumbo del carro (rumbo del GPS). */
     const val COMPASS = "compass"
 }
 

@@ -54,4 +54,6 @@
     <string name="radio_no_song">Live</string>
     <string name="radio_suggested">Suggested</string>
     <string name="radio_nothing">Pick a station from Favorites, Nearby or Explore.</string>
+    <string name="radio_recent">Recent</string>
+    <string name="radio_no_recent">Stations you listen to show up here.</string>
 </resources>

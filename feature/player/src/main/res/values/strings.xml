@@ -54,4 +54,6 @@
     <string name="radio_no_song">En vivo</string>
     <string name="radio_suggested">Sugeridas</string>
     <string name="radio_nothing">Elige una emisora de Favoritas, Cerca o Explorar.</string>
+    <string name="radio_recent">Recientes</string>
+    <string name="radio_no_recent">Aquí aparecen las emisoras que vas escuchando.</string>
 </resources>

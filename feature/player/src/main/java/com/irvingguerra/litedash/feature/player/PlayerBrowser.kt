@@ -217,7 +217,7 @@ private fun groupName(group: Group, name: String): String = when {
 // --- Radio por internet ---
 
 // Favoritas primero: es la lista principal y con la que se abre siempre.
-internal enum class RadioTab(val title: Int) { FAVORITES(R.string.radio_favorites), NEARBY(R.string.radio_nearby), EXPLORE(R.string.radio_explore), SEARCH(R.string.radio_search_tab) }
+internal enum class RadioTab(val title: Int) { FAVORITES(R.string.radio_favorites), RECENT(R.string.radio_recent), NEARBY(R.string.radio_nearby), EXPLORE(R.string.radio_explore), SEARCH(R.string.radio_search_tab) }
 
 /** Pestaña y búsqueda de la radio: al cerrar y abrir la biblioteca sigue donde estaba. */
 internal object RadioBrowserMemory {
@@ -309,6 +309,7 @@ internal fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier, showTabs: Bo
         val (list, empty) = when (tab) {
             RadioTab.NEARBY -> workingNearby to stringResource(if (nearby == null || checkingNearby) R.string.radio_checking else R.string.radio_none)
             RadioTab.FAVORITES -> favorites to stringResource(R.string.radio_no_favorites)
+            RadioTab.RECENT -> RadioRecents.list(context) to stringResource(R.string.radio_no_recent)
             RadioTab.EXPLORE -> workingExploring to stringResource(if (exploring == null) R.string.radio_loading else if (checkingExploring) R.string.radio_checking else R.string.radio_none)
             RadioTab.SEARCH -> (if (query.length < 2) workingTop else workingFound) to stringResource(if (query.length < 2) R.string.radio_checking else if (found == null) R.string.radio_loading else if (checkingFound) R.string.radio_checking else R.string.radio_none)
         }

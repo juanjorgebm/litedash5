@@ -189,6 +189,7 @@ object Player {
 
     private fun start(item: Playable) {
         val myLoad = ++load
+        if (item is Station) PlayerStore(app).rememberStation(item)
         releaseAudio()
         if (item is Track) watchUsb() else unwatchUsb()
         publishMetadata(item, null)
