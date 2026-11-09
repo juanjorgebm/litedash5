@@ -69,7 +69,7 @@ public class PlayerActivity extends Activity {
 
     private void play() {
         File f = new File(list.get(pos));
-        title.setText(FilesActivity.label(f) + "   (" + (pos + 1) + " de " + list.size() + ")");
+        title.setText(Storage.label(f) + "   (" + (pos + 1) + " de " + list.size() + ")");
         video.setVideoURI(Uri.fromFile(f));
         video.start();
     }

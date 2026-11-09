@@ -96,6 +96,17 @@ final class Storage {
         return deleted;
     }
 
+    /** "2026-11-09_08-15-30.mp4" → "09/11/2026  08:15:30   ·   130 MB   ·   USB" */
+    static String label(File f) {
+        String n = f.getName().replace(".mp4", "");
+        String txt = n;
+        if (n.length() >= 19) {
+            txt = n.substring(8, 10) + "/" + n.substring(5, 7) + "/" + n.substring(0, 4) + "   "
+                    + n.substring(11, 13) + ":" + n.substring(14, 16) + ":" + n.substring(17, 19);
+        }
+        return txt + "   ·   " + human(f.length()) + "   ·   " + (isUsb(f.getParentFile()) ? "USB" : "memoria interna");
+    }
+
     static String human(long bytes) {
         if (bytes >= 1L << 30) return String.format(java.util.Locale.US, "%.1f GB", bytes / (double) (1L << 30));
         return String.format(java.util.Locale.US, "%d MB", bytes >> 20);

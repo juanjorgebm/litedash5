@@ -125,12 +125,7 @@ public class RecorderService extends Service implements SensorEventListener {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_TOGGLE.equals(intent.getAction())) {
-            // Botón del widget: si graba, detiene; si no, graba ya (clip de 1 min que sigue solo si el carro va en marcha).
-            if (recording || forcedUntil > SystemClock.elapsedRealtime()) stopNow();
-            else {
-                if (!armed) setArmed(true);
-                recordClip();
-            }
+            toggle();
         }
         lastWidget = null;
         return START_STICKY;
@@ -155,6 +150,16 @@ public class RecorderService extends Service implements SensorEventListener {
         forcedUntil = SystemClock.elapsedRealtime() + CLIP_MS;
         retryAfter = 0;
         event("Clip manual de 1 minuto");
+    }
+
+    /** Botón grabar/detener (widget y pantalla): si graba, detiene; si no, graba ya (1 min, y sigue solo si el carro va en marcha). */
+    void toggle() {
+        if (recording || forcedUntil > SystemClock.elapsedRealtime()) stopNow();
+        else {
+            if (!armed) setArmed(true);
+            recordClip();
+        }
+        lastWidget = null;
     }
 
     void stopNow() {
