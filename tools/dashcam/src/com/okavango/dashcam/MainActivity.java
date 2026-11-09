@@ -55,7 +55,10 @@ public class MainActivity extends Activity {
     private ArrayAdapter<File> adapter;
     private TextView videosHeader;
     // Ajustes
-    private Switch autoSwitch;
+    private Switch autoSwitch, impactSwitch;
+    private TextView impactVal, impactLive;
+    private LinearLayout cameraRow;
+    private int shownCamera = -1;
     private TextView startVal, stopVal, liveVib, updateInfo, updateButton;
     private boolean syncing, busy;
     private String[] available;
@@ -184,8 +187,9 @@ public class MainActivity extends Activity {
         videosHeader.setPadding(0, 0, 0, dp(10));
         col.addView(videosHeader);
         ListView list = new ListView(this);
-        list.setDividerHeight(dp(8));
-        list.setDivider(null);
+        // Separación entre videos: divisor transparente (setDivider(null) borra también la altura).
+        list.setDivider(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        list.setDividerHeight(dp(16));
         adapter = new ArrayAdapter<File>(this, android.R.layout.simple_list_item_1, files) {
             @Override
             public View getView(int pos, View convert, ViewGroup parent) {
@@ -197,7 +201,7 @@ public class MainActivity extends Activity {
                 t.setPadding(dp(20), 0, dp(20), 0);
                 t.setTextColor(live ? RED : Color.WHITE);
                 t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-                t.setMinHeight(dp(60));
+                t.setMinHeight(dp(68));
                 t.setBackground(pressable(SLATE, SLATE));
                 return t;
             }
@@ -220,7 +224,11 @@ public class MainActivity extends Activity {
                         .setTitle("¿Borrar este video?")
                         .setMessage(Storage.label(f))
                         .setPositiveButton("Borrar", new DialogInterface.OnClickListener() {
-                            public void onClick(DialogInterface d, int w) { f.delete(); reloadVideos(); }
+                            public void onClick(DialogInterface d, int w) {
+                                f.delete();
+                                new File(f.getParentFile(), f.getName().replace(".mp4", ".srt")).delete();
+                                reloadVideos();
+                            }
                         })
                         .setNegativeButton("Cancelar", null)
                         .show();
@@ -273,6 +281,45 @@ public class MainActivity extends Activity {
         TextView tip = text("Mira la vibración en un semáforo con el motor encendido: el número de \"Deja de grabar\" debe quedar por encima de ese valor.", 15, GREY);
         tip.setPadding(0, dp(6), 0, 0);
         thrCard.addView(tip);
+
+        LinearLayout impCard = card(col, "Golpes y frenadas bruscas");
+        impactSwitch = new Switch(this);
+        impactSwitch.setText("Grabar 1 minuto al detectar un golpe (también con el carro apagado)   ");
+        impactSwitch.setTextColor(Color.WHITE);
+        impactSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        impactSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean on) {
+                RecorderService s = RecorderService.instance;
+                if (s != null && !syncing) s.setImpact(on, s.impactThr);
+            }
+        });
+        impCard.addView(impactSwitch);
+        impactLive = text("", 17, GREY);
+        impactLive.setPadding(0, dp(6), 0, dp(4));
+        impCard.addView(impactLive);
+        impactVal = text("", 22, AMBER);
+        LinearLayout ir = new LinearLayout(this);
+        ir.setGravity(Gravity.CENTER_VERTICAL);
+        ir.addView(text("Fuerza del golpe para grabar (m/s²)", 19, Color.WHITE), new LinearLayout.LayoutParams(dp(380), -2));
+        ir.addView(round("−", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setImpact(s.impactOn, s.impactThr - 0.5f); }
+        }));
+        impactVal.setGravity(Gravity.CENTER);
+        ir.addView(impactVal, new LinearLayout.LayoutParams(dp(90), -2));
+        ir.addView(round("+", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setImpact(s.impactOn, s.impactThr + 0.5f); }
+        }));
+        impCard.addView(ir);
+        TextView itip = text("Más bajo = más sensible. Los videos de golpes salen marcados GOLPE y no se borran solos.", 15, GREY);
+        itip.setPadding(0, dp(6), 0, 0);
+        impCard.addView(itip);
+
+        LinearLayout camCard = card(col, "Cámara");
+        cameraRow = new LinearLayout(this);
+        camCard.addView(cameraRow);
+        TextView ctip = text("La pantalla muestra estas cámaras. La 0 es la salida del sistema 360 (la que ya funciona); la 1 la tiene ocupada el sistema, pero puedes intentarlo. Si una falla, el error sale en la pestaña Grabar.", 15, GREY);
+        ctip.setPadding(0, dp(8), 0, 0);
+        camCard.addView(ctip);
 
         LinearLayout updCard = card(col, "Actualización");
         LinearLayout upd = new LinearLayout(this);
@@ -355,9 +402,13 @@ public class MainActivity extends Activity {
                 detail.setText(vib + (s.armed ? "  ·  automática encendida" : "  ·  automática apagada"));
                 liveVib.setText(vib);
                 startVal.setText(String.format(Locale.US, "%.2f", s.startThr));
+                impactVal.setText(String.format(Locale.US, "%.1f", s.impactThr));
+                impactLive.setText(String.format(Locale.US, "Sacudida ahora: %.1f  (máx. últimos 10 s: %.1f)", s.jolt, s.joltMax10));
+                if (shownCamera != s.cameraId) buildCameraButtons(s.cameraId);
                 stopVal.setText(String.format(Locale.US, "%.2f", s.stopThr));
                 syncing = true;
                 autoSwitch.setChecked(s.armed);
+                impactSwitch.setChecked(s.impactOn);
                 syncing = false;
                 File cur = s.currentFile;
                 File dir = cur != null ? cur.getParentFile() : Storage.recordDir();
@@ -490,6 +541,34 @@ public class MainActivity extends Activity {
         s.addState(new int[]{android.R.attr.state_pressed}, box(AMBER, AMBER, 14));
         s.addState(new int[]{}, box(fill, stroke, 14));
         return s;
+    }
+
+    private void buildCameraButtons(int selected) {
+        shownCamera = selected;
+        cameraRow.removeAllViews();
+        int n;
+        try { n = android.hardware.Camera.getNumberOfCameras(); } catch (Throwable t) { n = 0; }
+        if (n == 0) { cameraRow.addView(text("No se encontraron cámaras", 18, RED)); return; }
+        for (int i = 0; i < n; i++) {
+            final int id = i;
+            String facing = "";
+            try {
+                android.hardware.Camera.CameraInfo info = new android.hardware.Camera.CameraInfo();
+                android.hardware.Camera.getCameraInfo(i, info);
+                facing = info.facing == android.hardware.Camera.CameraInfo.CAMERA_FACING_FRONT ? " (frontal)" : " (trasera)";
+            } catch (Throwable ignored) { }
+            String name = "Cámara " + i + (i == 0 ? " · sistema 360" : facing);
+            TextView b = button(name, new View.OnClickListener() {
+                public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setCamera(id); }
+            });
+            if (i == selected) {
+                b.setBackground(pressable(AMBER, AMBER));
+                b.setTextColor(BG);
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(60));
+            lp.rightMargin = dp(12);
+            cameraRow.addView(b, lp);
+        }
     }
 
     private Boolean recIconActive;

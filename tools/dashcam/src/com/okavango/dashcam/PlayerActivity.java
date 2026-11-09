@@ -25,6 +25,26 @@ public class PlayerActivity extends Activity {
     private TextView title;
     private ArrayList<String> list;
     private int pos;
+    private TextView stamp;
+    private long startWall;
+    private final android.os.Handler h = new android.os.Handler();
+
+    /** Fecha y hora real del cuadro que se ve, en la esquina (inicio del archivo + posición). */
+    private final Runnable tickStamp = new Runnable() {
+        public void run() {
+            if (startWall > 0) {
+                long t = startWall + video.getCurrentPosition();
+                stamp.setText(new java.text.SimpleDateFormat("dd/MM/yyyy  HH:mm:ss", java.util.Locale.US).format(new java.util.Date(t)));
+            }
+            h.postDelayed(this, 300);
+        }
+    };
+
+    @Override
+    protected void onResume() { super.onResume(); h.post(tickStamp); }
+
+    @Override
+    protected void onPause() { super.onPause(); h.removeCallbacks(tickStamp); }
 
     @Override
     protected void onCreate(Bundle b) {
@@ -43,6 +63,12 @@ public class PlayerActivity extends Activity {
         title.setBackgroundColor(0x99000000);
         title.setPadding(20, 10, 20, 10);
         root.addView(title, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START));
+        stamp = new TextView(this);
+        stamp.setTextColor(Color.WHITE);
+        stamp.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        stamp.setBackgroundColor(0x88000000);
+        stamp.setPadding(12, 4, 12, 4);
+        root.addView(stamp, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END));
         setContentView(root);
 
         MediaController mc = new MediaController(this);
@@ -70,6 +96,9 @@ public class PlayerActivity extends Activity {
     private void play() {
         File f = new File(list.get(pos));
         title.setText(Storage.label(f) + "   (" + (pos + 1) + " de " + list.size() + ")");
+        try {
+            startWall = new java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US).parse(f.getName().substring(0, 19)).getTime();
+        } catch (Throwable t) { startWall = 0; }
         video.setVideoURI(Uri.fromFile(f));
         video.start();
     }

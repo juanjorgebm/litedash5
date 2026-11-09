@@ -87,11 +87,13 @@ final class Storage {
         File[] files = dir.listFiles();
         if (files == null) return 0;
         List<File> videos = new ArrayList<>();
-        for (File f : files) if (f.getName().endsWith(".mp4") && !f.equals(keep)) videos.add(f);
+        // Los videos de golpes ("_impacto") no se borran solos.
+        for (File f : files) if (f.getName().endsWith(".mp4") && !f.getName().contains("_impacto") && !f.equals(keep)) videos.add(f);
         sortNewestFirst(videos);
         while (dir.getUsableSpace() < min && !videos.isEmpty()) {
             File oldest = videos.remove(videos.size() - 1);
             if (oldest.delete()) deleted++;
+            new File(dir, oldest.getName().replace(".mp4", ".srt")).delete();
         }
         return deleted;
     }
@@ -104,6 +106,7 @@ final class Storage {
             txt = n.substring(8, 10) + "/" + n.substring(5, 7) + "/" + n.substring(0, 4) + "   "
                     + n.substring(11, 13) + ":" + n.substring(14, 16) + ":" + n.substring(17, 19);
         }
+        if (f.getName().contains("_impacto")) txt += "   ·   GOLPE";
         return txt + "   ·   " + human(f.length()) + "   ·   " + (isUsb(f.getParentFile()) ? "USB" : "memoria interna");
     }
 

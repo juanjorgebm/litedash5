@@ -44,8 +44,9 @@ import java.util.Locale;
 public class RecorderService extends Service implements SensorEventListener {
 
     static final String PREFS = "dashcam";
-    static final String K_ARMED = "armed", K_START = "start_thr", K_STOP = "stop_thr";
-    static final float DEF_START = 0.10f, DEF_STOP = 0.07f;
+    static final String K_ARMED = "armed", K_START = "start_thr", K_STOP = "stop_thr",
+            K_IMPACT_ON = "impact_on", K_IMPACT_THR = "impact_thr", K_CAM = "camera_id";
+    static final float DEF_START = 0.10f, DEF_STOP = 0.07f, DEF_IMPACT = 3.0f;
     /** Segundos seguidos por encima/debajo del umbral para decidir "en marcha" o "detenido". */
     static final long START_MS = 3000, STOP_MS = 2000;
     static final long SEGMENT_MS = 3 * 60 * 1000;
@@ -58,6 +59,14 @@ public class RecorderService extends Service implements SensorEventListener {
     // --- estado que lee la pantalla principal
     volatile boolean recording, moving, accOn = true, armed, holdUntilStopped;
     volatile float vibration, startThr = DEF_START, stopThr = DEF_STOP, vibMin10 = 9, vibMax10;
+    // Golpes: desvío brusco de |a| respecto de su promedio lento (m/s²).
+    volatile boolean impactOn = true;
+    volatile float impactThr = DEF_IMPACT, jolt, joltMax10;
+    volatile int cameraId;
+    private float slowMag = -1;
+    private volatile long lastImpact;
+    private volatile boolean impactPending, currentImpact;
+    private final float[] joltHist = new float[20];
     volatile long recordingSince, forcedUntil;
     volatile String lastError = "", lastEvent = "", folder = "";
     volatile File currentFile;
@@ -96,6 +105,9 @@ public class RecorderService extends Service implements SensorEventListener {
         armed = prefs.getBoolean(K_ARMED, true);
         startThr = prefs.getFloat(K_START, DEF_START);
         stopThr = prefs.getFloat(K_STOP, DEF_STOP);
+        impactOn = prefs.getBoolean(K_IMPACT_ON, true);
+        impactThr = prefs.getFloat(K_IMPACT_THR, DEF_IMPACT);
+        cameraId = prefs.getInt(K_CAM, 0);
 
         camThread = new HandlerThread("dashcam");
         camThread.start();
@@ -143,6 +155,19 @@ public class RecorderService extends Service implements SensorEventListener {
         startThr = Math.max(0.02f, start);
         stopThr = Math.max(0.01f, Math.min(stop, startThr - 0.01f));
         prefs.edit().putFloat(K_START, startThr).putFloat(K_STOP, stopThr).apply();
+    }
+
+    void setImpact(boolean on, float thr) {
+        impactOn = on;
+        impactThr = Math.max(0.5f, Math.min(thr, 15f));
+        prefs.edit().putBoolean(K_IMPACT_ON, on).putFloat(K_IMPACT_THR, impactThr).apply();
+    }
+
+    /** Cámara a grabar; se aplica en la próxima grabación. */
+    void setCamera(int id) {
+        cameraId = id;
+        prefs.edit().putInt(K_CAM, id).apply();
+        event("Cámara elegida: " + id);
     }
 
     /** Clip manual: graba 1 minuto aunque el carro esté quieto. No metas reversa mientras tanto. */
@@ -198,7 +223,8 @@ public class RecorderService extends Service implements SensorEventListener {
             updateMotion(now);
             boolean forced = forcedUntil > now;
             if (!moving) holdUntilStopped = false;
-            boolean want = accOn && (forced || (armed && moving && !holdUntilStopped));
+            // El clip manual o por golpe graba aunque el carro esté apagado (si la pantalla sigue encendida).
+            boolean want = forced || (accOn && armed && moving && !holdUntilStopped);
             if (want && !recording && now >= retryAfter) startRecording();
             else if (!want && recording) {
                 stopRecording(!accOn ? "carro apagado" : forced ? "" : !armed ? "dashcam desactivada"
@@ -230,6 +256,11 @@ public class RecorderService extends Service implements SensorEventListener {
         for (float h : hist10) { if (h > 0) mn = Math.min(mn, h); mx = Math.max(mx, h); }
         vibMin10 = mn;
         vibMax10 = mx;
+        joltHist[histPos == 0 ? joltHist.length - 1 : histPos - 1] = jolt;
+        jolt = 0;
+        float jm = 0;
+        for (float h : joltHist) jm = Math.max(jm, h);
+        joltMax10 = jm;
 
         if (v > startThr) { if (aboveSince == 0) aboveSince = now; belowSince = 0; }
         else if (v < stopThr) { if (belowSince == 0) belowSince = now; aboveSince = 0; }
@@ -241,6 +272,17 @@ public class RecorderService extends Service implements SensorEventListener {
     @Override
     public void onSensorChanged(SensorEvent e) {
         float m = (float) Math.sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2]);
+        if (slowMag < 0) slowMag = m;
+        float j = Math.abs(m - slowMag);
+        slowMag += 0.02f * (m - slowMag);
+        if (j > jolt) jolt = j;
+        if (impactOn && j > impactThr) {
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastImpact > 5000) {
+                lastImpact = now;
+                onImpact(j);
+            }
+        }
         synchronized (mags) {
             mags[magPos] = m;
             times[magPos] = SystemClock.elapsedRealtime();
@@ -251,6 +293,17 @@ public class RecorderService extends Service implements SensorEventListener {
 
     @Override
     public void onAccuracyChanged(Sensor s, int a) { }
+
+    /** Golpe o frenada brusca: graba al menos 1 minuto y marca el video como "impacto" (no se borra solo). */
+    private void onImpact(float j) {
+        event(String.format(Locale.US, "GOLPE detectado (%.1f m/s²): grabando", j));
+        if (recording) currentImpact = true;
+        else impactPending = true;
+        long until = SystemClock.elapsedRealtime() + CLIP_MS;
+        if (forcedUntil < until) forcedUntil = until;
+        retryAfter = 0;
+        holdUntilStopped = false;
+    }
 
     private void readAcc() {
         try {
@@ -268,9 +321,12 @@ public class RecorderService extends Service implements SensorEventListener {
         folder = (Storage.isUsb(dir) ? "USB · " : "memoria interna · ") + dir.getAbsolutePath();
         int del = Storage.freeSpace(dir, null);
         if (del > 0) event("Borré " + del + " video(s) viejo(s) para hacer espacio");
+        currentImpact = impactPending;
+        impactPending = false;
         File f = new File(dir, new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(new Date()) + ".mp4");
+        final int camId = cameraId;
         try {
-            camera = Camera.open(0);
+            camera = Camera.open(camId);
         } catch (Throwable t) {
             camera = null;
             fail("Cámara ocupada (¿está abierto Vista 360?). Reintento en 10 s");
@@ -303,8 +359,8 @@ public class RecorderService extends Service implements SensorEventListener {
                 recorder.setCamera(camera);
                 recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
                 if (q >= 0) {
-                    if (!CamcorderProfile.hasProfile(0, q)) throw new RuntimeException("sin perfil " + q);
-                    CamcorderProfile prof = CamcorderProfile.get(0, q);
+                    if (!CamcorderProfile.hasProfile(camId, q)) throw new RuntimeException("sin perfil " + q);
+                    CamcorderProfile prof = CamcorderProfile.get(camId, q);
                     recorder.setOutputFormat(prof.fileFormat);
                     recorder.setVideoFrameRate(prof.videoFrameRate);
                     int w = prof.videoFrameWidth, h = prof.videoFrameHeight;
@@ -375,8 +431,42 @@ public class RecorderService extends Service implements SensorEventListener {
         }
         releaseCamera();
         if (recording && why.length() > 0) event("Grabación detenida: " + why);
+        File f = currentFile;
+        if (recording && f != null && f.exists()) {
+            if (currentImpact) {
+                File marked = new File(f.getParentFile(), f.getName().replace(".mp4", "_impacto.mp4"));
+                if (f.renameTo(marked)) f = marked;
+            }
+            writeSubtitles(f, recordingSince);
+        }
+        currentImpact = false;
         recording = false;
         currentFile = null;
+    }
+
+    /**
+     * Fecha y hora por segundo en un .srt con el mismo nombre del video: VLC y otros reproductores lo
+     * muestran como subtítulo, y el reproductor de la app la dibuja en una esquina.
+     */
+    private static void writeSubtitles(File video, long startedElapsed) {
+        try {
+            long durMs = SystemClock.elapsedRealtime() - startedElapsed;
+            long startWall = System.currentTimeMillis() - durMs;
+            SimpleDateFormat df = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US);
+            StringBuilder sb = new StringBuilder();
+            int n = (int) (durMs / 1000) + 1;
+            for (int i = 0; i < n; i++) {
+                sb.append(i + 1).append('\n').append(srtTime(i * 1000L)).append(" --> ").append(srtTime(i * 1000L + 1000))
+                        .append('\n').append(df.format(new Date(startWall + i * 1000L))).append("\n\n");
+            }
+            FileWriter w = new FileWriter(new File(video.getParentFile(), video.getName().replace(".mp4", ".srt")));
+            w.write(sb.toString());
+            w.close();
+        } catch (Throwable ignored) { }
+    }
+
+    private static String srtTime(long ms) {
+        return String.format(Locale.US, "%02d:%02d:%02d,%03d", ms / 3600000, ms / 60000 % 60, ms / 1000 % 60, ms % 1000);
     }
 
     private void releaseCamera() {
