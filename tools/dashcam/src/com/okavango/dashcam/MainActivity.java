@@ -55,7 +55,8 @@ public class MainActivity extends Activity {
     private ArrayAdapter<File> adapter;
     private TextView videosHeader;
     // Ajustes
-    private Switch autoSwitch, impactSwitch;
+    private Switch autoSwitch, impactSwitch, openSwitch;
+    private TextView speedVal, gpsLine;
     private TextView impactVal, impactLive;
     private LinearLayout cameraRow;
     private int shownCamera = -1;
@@ -270,7 +271,41 @@ public class MainActivity extends Activity {
         });
         autoCard.addView(autoSwitch);
 
-        LinearLayout thrCard = card(col, "Sensibilidad del movimiento");
+        openSwitch = new Switch(this);
+        openSwitch.setText("Abrir la dashcam al encender el carro   ");
+        openSwitch.setTextColor(Color.WHITE);
+        openSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        openSwitch.setPadding(0, dp(10), 0, 0);
+        openSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean on) {
+                RecorderService s = RecorderService.instance;
+                if (s != null && !syncing) s.setOpenOnAcc(on);
+            }
+        });
+        autoCard.addView(openSwitch);
+
+        LinearLayout gpsCard = card(col, "GPS y velocidad");
+        gpsLine = text("", 17, GREY);
+        gpsLine.setPadding(0, 0, 0, dp(6));
+        gpsCard.addView(gpsLine);
+        speedVal = text("", 22, AMBER);
+        LinearLayout sr = new LinearLayout(this);
+        sr.setGravity(Gravity.CENTER_VERTICAL);
+        sr.addView(text("Con GPS, graba a partir de (km/h)", 19, Color.WHITE), new LinearLayout.LayoutParams(dp(380), -2));
+        sr.addView(round("−", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setSpeed(s.speedThr - 5); }
+        }));
+        speedVal.setGravity(Gravity.CENTER);
+        sr.addView(speedVal, new LinearLayout.LayoutParams(dp(90), -2));
+        sr.addView(round("+", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setSpeed(s.speedThr + 5); }
+        }));
+        gpsCard.addView(sr);
+        TextView gtip = text("Si hay señal GPS, la velocidad decide cuándo grabar y la ubicación queda en el video. Sin GPS se usa la vibración (abajo).", 15, GREY);
+        gtip.setPadding(0, dp(6), 0, 0);
+        gpsCard.addView(gtip);
+
+        LinearLayout thrCard = card(col, "Sensibilidad del movimiento (sin GPS)");
         liveVib = text("", 17, GREY);
         liveVib.setPadding(0, 0, 0, dp(8));
         thrCard.addView(liveVib);
@@ -399,16 +434,23 @@ public class MainActivity extends Activity {
                 recBox.setBackground(active ? pressable(RED, Color.WHITE) : pressable(SLATE, AMBER));
                 String vib = String.format(Locale.US, "Vibración %.3f  (últimos 10 s: %.3f – %.3f)  ·  %s",
                         s.vibration, s.vibMin10 > 8 ? 0 : s.vibMin10, s.vibMax10, s.moving ? "en marcha" : "detenido");
-                detail.setText(vib + (s.armed ? "  ·  automática encendida" : "  ·  automática apagada"));
+                String gpsTxt = s.gpsActive() ? String.format(Locale.US, "GPS %.0f km/h  ·  ", s.speedKmh) : "";
+                detail.setText(gpsTxt + vib + (s.armed ? "  ·  automática encendida" : "  ·  automática apagada"));
                 liveVib.setText(vib);
                 startVal.setText(String.format(Locale.US, "%.2f", s.startThr));
                 impactVal.setText(String.format(Locale.US, "%.1f", s.impactThr));
+                speedVal.setText(String.format(Locale.US, "%.0f", s.speedThr));
+                String g = !s.hasGps ? "Esta pantalla no tiene GPS: se usa la vibración"
+                        : s.gpsActive() ? String.format(Locale.US, "GPS: %.0f km/h  ·  %.5f, %.5f", s.speedKmh, s.lat, s.lon)
+                        : "GPS: buscando señal… (mientras tanto se usa la vibración)";
+                gpsLine.setText(g);
                 impactLive.setText(String.format(Locale.US, "Sacudida ahora: %.1f  (máx. últimos 10 s: %.1f)", s.jolt, s.joltMax10));
                 if (shownCamera != s.cameraId) buildCameraButtons(s.cameraId);
                 stopVal.setText(String.format(Locale.US, "%.2f", s.stopThr));
                 syncing = true;
                 autoSwitch.setChecked(s.armed);
                 impactSwitch.setChecked(s.impactOn);
+                openSwitch.setChecked(s.openOnAcc);
                 syncing = false;
                 File cur = s.currentFile;
                 File dir = cur != null ? cur.getParentFile() : Storage.recordDir();

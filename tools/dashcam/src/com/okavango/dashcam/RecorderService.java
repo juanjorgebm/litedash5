@@ -16,6 +16,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -45,7 +46,8 @@ public class RecorderService extends Service implements SensorEventListener {
 
     static final String PREFS = "dashcam";
     static final String K_ARMED = "armed", K_START = "start_thr", K_STOP = "stop_thr",
-            K_IMPACT_ON = "impact_on", K_IMPACT_THR = "impact_thr", K_CAM = "camera_id";
+            K_IMPACT_ON = "impact_on", K_IMPACT_THR = "impact_thr", K_CAM = "camera_id",
+            K_SPEED = "speed_kmh", K_OPEN_ON_ACC = "open_on_acc";
     static final float DEF_START = 0.10f, DEF_STOP = 0.07f, DEF_IMPACT = 3.0f;
     /** Segundos seguidos por encima/debajo del umbral para decidir "en marcha" o "detenido". */
     static final long START_MS = 3000, STOP_MS = 2000;
@@ -63,6 +65,14 @@ public class RecorderService extends Service implements SensorEventListener {
     volatile boolean impactOn = true;
     volatile float impactThr = DEF_IMPACT, jolt, joltMax10;
     volatile int cameraId;
+    // GPS (si la pantalla lo tiene): ubicación en el video y velocidad para decidir cuándo grabar.
+    volatile boolean hasGps, openOnAcc = true;
+    volatile double lat, lon;
+    volatile float speedKmh = -1, speedThr = 30;
+    volatile long fixAt;
+    private android.location.LocationManager lm;
+    /** Ubicación de cada segundo de la grabación en curso (para el .srt). */
+    private final java.util.ArrayList<String> track = new java.util.ArrayList<>();
     private float slowMag = -1;
     private volatile long lastImpact;
     private volatile boolean impactPending, currentImpact;
@@ -108,6 +118,9 @@ public class RecorderService extends Service implements SensorEventListener {
         impactOn = prefs.getBoolean(K_IMPACT_ON, true);
         impactThr = prefs.getFloat(K_IMPACT_THR, DEF_IMPACT);
         cameraId = prefs.getInt(K_CAM, 0);
+        speedThr = prefs.getFloat(K_SPEED, 30);
+        openOnAcc = prefs.getBoolean(K_OPEN_ON_ACC, true);
+        startGps();
 
         camThread = new HandlerThread("dashcam");
         camThread.start();
@@ -162,6 +175,45 @@ public class RecorderService extends Service implements SensorEventListener {
         impactThr = Math.max(0.5f, Math.min(thr, 15f));
         prefs.edit().putBoolean(K_IMPACT_ON, on).putFloat(K_IMPACT_THR, impactThr).apply();
     }
+
+    void setSpeed(float kmh) {
+        speedThr = Math.max(5, Math.min(kmh, 120));
+        prefs.edit().putFloat(K_SPEED, speedThr).apply();
+    }
+
+    void setOpenOnAcc(boolean on) {
+        openOnAcc = on;
+        prefs.edit().putBoolean(K_OPEN_ON_ACC, on).apply();
+    }
+
+    /** GPS con señal y dato de velocidad en los últimos 5 s. */
+    boolean gpsActive() {
+        return speedKmh >= 0 && SystemClock.elapsedRealtime() - fixAt < 5000;
+    }
+
+    private void startGps() {
+        try {
+            lm = (android.location.LocationManager) getSystemService(LOCATION_SERVICE);
+            hasGps = lm.getAllProviders().contains(android.location.LocationManager.GPS_PROVIDER);
+            if (!hasGps) { event("La pantalla no tiene GPS: se usa la vibración"); return; }
+            lm.requestLocationUpdates(android.location.LocationManager.GPS_PROVIDER, 1000, 0, gpsListener, Looper.getMainLooper());
+        } catch (Throwable t) {
+            hasGps = false;
+            event("GPS no disponible: " + t.getMessage());
+        }
+    }
+
+    private final android.location.LocationListener gpsListener = new android.location.LocationListener() {
+        public void onLocationChanged(android.location.Location l) {
+            lat = l.getLatitude();
+            lon = l.getLongitude();
+            speedKmh = l.hasSpeed() ? l.getSpeed() * 3.6f : -1;
+            fixAt = SystemClock.elapsedRealtime();
+        }
+        public void onStatusChanged(String p, int st, Bundle b) { }
+        public void onProviderEnabled(String p) { }
+        public void onProviderDisabled(String p) { }
+    };
 
     /** Cámara a grabar; se aplica en la próxima grabación. */
     void setCamera(int id) {
@@ -262,8 +314,12 @@ public class RecorderService extends Service implements SensorEventListener {
         for (float h : joltHist) jm = Math.max(jm, h);
         joltMax10 = jm;
 
-        if (v > startThr) { if (aboveSince == 0) aboveSince = now; belowSince = 0; }
-        else if (v < stopThr) { if (belowSince == 0) belowSince = now; aboveSince = 0; }
+        // Con GPS manda la velocidad (graba a partir de speedThr km/h); sin GPS, la vibración.
+        boolean gps = gpsActive();
+        boolean above = gps ? speedKmh >= speedThr : v > startThr;
+        boolean below = gps ? speedKmh < speedThr : v < stopThr;
+        if (above) { if (aboveSince == 0) aboveSince = now; belowSince = 0; }
+        else if (below) { if (belowSince == 0) belowSince = now; aboveSince = 0; }
         else { aboveSince = 0; belowSince = 0; }
         if (!moving && aboveSince != 0 && now - aboveSince >= START_MS) { moving = true; event("En movimiento"); }
         if (moving && belowSince != 0 && now - belowSince >= STOP_MS) { moving = false; event("Carro detenido"); }
@@ -309,8 +365,21 @@ public class RecorderService extends Service implements SensorEventListener {
         try {
             String v = Settings.System.getString(getContentResolver(), "ACC_OFF_ON_STATE");
             boolean on = v == null || !v.trim().equals("0");
-            if (on != accOn) event(on ? "Carro encendido" : "Carro apagado");
+            if (on != accOn) {
+                event(on ? "Carro encendido" : "Carro apagado");
+                if (on) openAppIfWanted(this);
+            }
             accOn = on;
+        } catch (Throwable ignored) { }
+    }
+
+    /** Al encender el carro abre la pantalla de la dashcam (si está activada esa opción). */
+    static void openAppIfWanted(Context c) {
+        if (!c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(K_OPEN_ON_ACC, true)) return;
+        try {
+            Intent i = new Intent(c, MainActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            c.startActivity(i);
         } catch (Throwable ignored) { }
     }
 
@@ -437,9 +506,12 @@ public class RecorderService extends Service implements SensorEventListener {
                 File marked = new File(f.getParentFile(), f.getName().replace(".mp4", "_impacto.mp4"));
                 if (f.renameTo(marked)) f = marked;
             }
-            writeSubtitles(f, recordingSince);
+            java.util.ArrayList<String> t;
+            synchronized (track) { t = new java.util.ArrayList<>(track); }
+            writeSubtitles(f, recordingSince, t);
         }
         currentImpact = false;
+        synchronized (track) { track.clear(); }
         recording = false;
         currentFile = null;
     }
@@ -448,7 +520,7 @@ public class RecorderService extends Service implements SensorEventListener {
      * Fecha y hora por segundo en un .srt con el mismo nombre del video: VLC y otros reproductores lo
      * muestran como subtítulo, y el reproductor de la app la dibuja en una esquina.
      */
-    private static void writeSubtitles(File video, long startedElapsed) {
+    private static void writeSubtitles(File video, long startedElapsed, java.util.List<String> gps) {
         try {
             long durMs = SystemClock.elapsedRealtime() - startedElapsed;
             long startWall = System.currentTimeMillis() - durMs;
@@ -457,7 +529,11 @@ public class RecorderService extends Service implements SensorEventListener {
             int n = (int) (durMs / 1000) + 1;
             for (int i = 0; i < n; i++) {
                 sb.append(i + 1).append('\n').append(srtTime(i * 1000L)).append(" --> ").append(srtTime(i * 1000L + 1000))
-                        .append('\n').append(df.format(new Date(startWall + i * 1000L))).append("\n\n");
+                        .append('\n').append(df.format(new Date(startWall + i * 1000L))).append('\n');
+                // Segunda línea: ubicación GPS de ese segundo (vacía si no hay señal).
+                String g = i < gps.size() ? gps.get(i) : "";
+                if (g.length() > 0) sb.append(g).append('\n');
+                sb.append('\n');
             }
             FileWriter w = new FileWriter(new File(video.getParentFile(), video.getName().replace(".mp4", ".srt")));
             w.write(sb.toString());
@@ -526,6 +602,11 @@ public class RecorderService extends Service implements SensorEventListener {
     private void writeCsv(long now) {
         if (now - lastCsv < 1000) return;
         lastCsv = now;
+        if (recording) {
+            synchronized (track) {
+                track.add(gpsActive() ? String.format(Locale.US, "%.5f, %.5f  ·  %.0f km/h", lat, lon, speedKmh) : "");
+            }
+        }
         csvLine(String.format(Locale.US, "%s,%.4f,%d,%d,%d,%.3f,%.3f",
                 new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date()), vibration,
                 moving ? 1 : 0, recording ? 1 : 0, accOn ? 1 : 0, startThr, stopThr));
@@ -588,6 +669,7 @@ public class RecorderService extends Service implements SensorEventListener {
         cam.post(new Runnable() { public void run() { stopRecording("app cerrada"); } });
         camThread.quitSafely();
         try { sm.unregisterListener(this); } catch (Throwable ignored) { }
+        try { if (lm != null) lm.removeUpdates(gpsListener); } catch (Throwable ignored) { }
         try { if (preview != null) wm.removeView(preview); } catch (Throwable ignored) { }
         try { if (csv != null) csv.close(); } catch (Throwable ignored) { }
         try { wake.release(); } catch (Throwable ignored) { }

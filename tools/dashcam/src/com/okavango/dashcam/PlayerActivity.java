@@ -25,7 +25,9 @@ public class PlayerActivity extends Activity {
     private TextView title;
     private ArrayList<String> list;
     private int pos;
-    private TextView stamp;
+    private TextView stamp, place;
+    /** Ubicación GPS por segundo, leída del .srt del video (vacío si no hubo señal). */
+    private java.util.List<String> gps = new java.util.ArrayList<>();
     private long startWall;
     private final android.os.Handler h = new android.os.Handler();
 
@@ -36,6 +38,10 @@ public class PlayerActivity extends Activity {
                 long t = startWall + video.getCurrentPosition();
                 stamp.setText(new java.text.SimpleDateFormat("dd/MM/yyyy  HH:mm:ss", java.util.Locale.US).format(new java.util.Date(t)));
             }
+            int sec = video.getCurrentPosition() / 1000;
+            String g = sec < gps.size() ? gps.get(sec) : "";
+            place.setText(g);
+            place.setVisibility(g.length() > 0 ? View.VISIBLE : View.GONE);
             h.postDelayed(this, 300);
         }
     };
@@ -69,6 +75,12 @@ public class PlayerActivity extends Activity {
         stamp.setBackgroundColor(0x88000000);
         stamp.setPadding(12, 4, 12, 4);
         root.addView(stamp, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END));
+        place = new TextView(this);
+        place.setTextColor(Color.WHITE);
+        place.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        place.setBackgroundColor(0x88000000);
+        place.setPadding(12, 4, 12, 4);
+        root.addView(place, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.START));
         setContentView(root);
 
         MediaController mc = new MediaController(this);
@@ -99,7 +111,28 @@ public class PlayerActivity extends Activity {
         try {
             startWall = new java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US).parse(f.getName().substring(0, 19)).getTime();
         } catch (Throwable t) { startWall = 0; }
+        gps = readGps(new File(f.getParentFile(), f.getName().replace(".mp4", ".srt")));
         video.setVideoURI(Uri.fromFile(f));
         video.start();
+    }
+
+    /** Del .srt: bloques "n / tiempo / fecha / [ubicación]"; devuelve la ubicación de cada segundo. */
+    private static java.util.List<String> readGps(File srt) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(srt));
+            java.util.List<String> block = new java.util.ArrayList<>();
+            String line;
+            while (true) {
+                line = r.readLine();
+                if (line == null || line.trim().isEmpty()) {
+                    if (!block.isEmpty()) out.add(block.size() >= 4 ? block.get(3) : "");
+                    block.clear();
+                    if (line == null) break;
+                } else block.add(line);
+            }
+            r.close();
+        } catch (Throwable ignored) { }
+        return out;
     }
 }
