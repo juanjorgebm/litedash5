@@ -98,8 +98,8 @@ android {
             dimension = "channel"
             buildConfigField("String", "CHANNEL", "\"github\"")
             buildConfigField("String", "CATALOG_URL", "\"$CATALOG_URL\"")
-            // Esta versión para Android 5 no sale de los lanzamientos del proyecto original: sin actualizador.
-            buildConfigField("String", "UPDATES_URL", "\"\"")
+            // Las versiones de este fork salen en sus propios lanzamientos (ver .github/workflows/publicar.yml).
+            buildConfigField("String", "UPDATES_URL", "\"https://api.github.com/repos/juanjorgebm/litedash5/releases?per_page=20\"")
         }
     }
 
