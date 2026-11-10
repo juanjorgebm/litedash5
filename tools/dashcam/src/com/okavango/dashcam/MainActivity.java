@@ -57,6 +57,10 @@ public class MainActivity extends Activity {
     // Ajustes
     private Switch autoSwitch, impactSwitch, openSwitch;
     private TextView speedVal, stopSpeedVal, gpsLine, storageLine, maxVal;
+    private TextView fcwWarn, fcwLine;
+    private Switch fcwSwitch;
+    private TextView[] sensButtons;
+    private static final float[] SENS = {0.7f, 1.0f, 1.4f};
     private long lastStorage;
     private TextView impactVal, impactLive;
     private LinearLayout cameraRow;
@@ -137,6 +141,11 @@ public class MainActivity extends Activity {
 
         status = text("Iniciando…", 30, Color.WHITE);
         left.addView(status);
+        fcwWarn = text("", 26, Color.WHITE);
+        fcwWarn.setGravity(Gravity.CENTER_VERTICAL);
+        fcwWarn.setPadding(dp(14), dp(4), dp(14), dp(4));
+        fcwWarn.setVisibility(View.GONE);
+        left.addView(fcwWarn, new LinearLayout.LayoutParams(-2, -2));
         detail = text("", 17, GREY);
         detail.setPadding(0, dp(4), 0, dp(16));
         left.addView(detail);
@@ -371,6 +380,48 @@ public class MainActivity extends Activity {
         ctip.setPadding(0, dp(8), 0, 0);
         camCard.addView(ctip);
 
+        LinearLayout fcwCard = card(col, "Aviso de choque frontal (experimental)");
+        fcwSwitch = new Switch(this);
+        fcwSwitch.setText("Pitar si hay peligro de chocar con el de adelante   ");
+        fcwSwitch.setTextColor(Color.WHITE);
+        fcwSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        fcwSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean on) {
+                RecorderService s = RecorderService.instance;
+                if (s != null && !syncing) s.setFcw(on, s.fcwSens);
+            }
+        });
+        fcwCard.addView(fcwSwitch);
+        LinearLayout sensRow = new LinearLayout(this);
+        sensRow.setGravity(Gravity.CENTER_VERTICAL);
+        sensRow.setPadding(0, dp(8), 0, 0);
+        sensRow.addView(text("Sensibilidad", 19, Color.WHITE), new LinearLayout.LayoutParams(dp(180), -2));
+        String[] sn = {"Baja", "Media", "Alta"};
+        sensButtons = new TextView[3];
+        for (int i = 0; i < 3; i++) {
+            final float val = SENS[i];
+            TextView b = button(sn[i], new View.OnClickListener() {
+                public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setFcw(s.fcwOn, val); }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(56));
+            lp.rightMargin = dp(10);
+            sensRow.addView(b, lp);
+            sensButtons[i] = b;
+        }
+        TextView testB = button("Probar pitido", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.testBeep(); }
+        });
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-2, dp(56));
+        tlp.leftMargin = dp(20);
+        sensRow.addView(testB, tlp);
+        fcwCard.addView(sensRow);
+        fcwLine = text("", 16, GREY);
+        fcwLine.setPadding(0, dp(8), 0, 0);
+        fcwCard.addView(fcwLine);
+        TextView ftip = text("Usa la vista de frente (mitad derecha de la imagen del 360) solo mientras graba y el carro avanza. Detecta carros, motos, buses, camiones, bicis y personas en tu carril. Pita más rápido cuanto más cerca o más rápido te acercas. Es una ayuda experimental: puede fallar, sobre todo de noche o con lluvia. No reemplaza ir atento.", 15, GREY);
+        ftip.setPadding(0, dp(6), 0, 0);
+        fcwCard.addView(ftip);
+
         LinearLayout stCard = card(col, "Almacenamiento");
         storageLine = text("", 17, GREY);
         storageLine.setPadding(0, 0, 0, dp(6));
@@ -478,6 +529,26 @@ public class MainActivity extends Activity {
                 speedVal.setText(String.format(Locale.US, "%.0f", s.speedThr));
                 stopSpeedVal.setText(String.format(Locale.US, "%.0f", s.stopKmh));
                 maxVal.setText(String.format(Locale.US, "%.1f", s.maxInternalGb));
+                // Aviso de choque
+                Fcw.Result fr = s.fcwResult;
+                int lvl = fr != null && s.fcwOn && s.recording ? fr.level : 0;
+                if (lvl > 0) {
+                    fcwWarn.setVisibility(View.VISIBLE);
+                    fcwWarn.setText((lvl == 3 ? "¡FRENA!  " : lvl == 2 ? "¡CUIDADO!  " : "Atención:  ") + fr);
+                    fcwWarn.setBackground(box(lvl >= 2 ? RED : SLATE, lvl >= 2 ? Color.WHITE : AMBER, 12));
+                } else fcwWarn.setVisibility(View.GONE);
+                for (int i = 0; i < 3; i++) {
+                    boolean on = Math.abs(SENS[i] - s.fcwSens) < 0.01f;
+                    sensButtons[i].setBackground(on ? pressable(AMBER, AMBER) : pressable(SLATE, AMBER));
+                    sensButtons[i].setTextColor(on ? BG : Color.WHITE);
+                }
+                String fl;
+                if (!s.fcwOn) fl = "Apagado.";
+                else if (!s.recording) fl = "Encendido · espera a que la dashcam esté grabando con el carro en marcha.";
+                else fl = String.format(Locale.US, "Analizando %.1f imágenes/s · fuente: %s · %s", s.fcwFps,
+                        s.fcwSource.isEmpty() ? "…" : s.fcwSource, fr != null ? fr.toString() : "…");
+                if (!s.fcwError.isEmpty()) fl += "\n" + s.fcwError;
+                fcwLine.setText(fl);
                 if (tab == 2 && now - lastStorage > 3000) {
                     lastStorage = now;
                     File in = Storage.internalDir();
@@ -497,6 +568,7 @@ public class MainActivity extends Activity {
                 syncing = true;
                 autoSwitch.setChecked(s.armed);
                 impactSwitch.setChecked(s.impactOn);
+                fcwSwitch.setChecked(s.fcwOn);
                 openSwitch.setChecked(s.openOnAcc);
                 syncing = false;
                 File cur = s.currentFile;

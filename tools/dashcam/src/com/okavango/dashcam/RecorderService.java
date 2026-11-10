@@ -47,7 +47,7 @@ public class RecorderService extends Service implements SensorEventListener {
     static final String PREFS = "dashcam";
     static final String K_ARMED = "armed", K_START = "start_thr", K_STOP = "stop_thr",
             K_IMPACT_ON = "impact_on", K_IMPACT_THR = "impact_thr", K_CAM = "camera_id",
-            K_SPEED = "speed_kmh", K_STOP_SPEED = "stop_kmh", K_MAX_INTERNAL = "max_internal_gb", K_OPEN_ON_ACC = "open_on_acc";
+            K_SPEED = "speed_kmh", K_STOP_SPEED = "stop_kmh", K_MAX_INTERNAL = "max_internal_gb", K_FCW = "fcw_on", K_FCW_SENS = "fcw_sens", K_OPEN_ON_ACC = "open_on_acc";
     static final float DEF_START = 0.10f, DEF_STOP = 0.07f, DEF_IMPACT = 3.0f;
     /** Segundos seguidos por encima/debajo del umbral para decidir "en marcha" o "detenido". */
     static final long START_MS = 3000, STOP_MS = 2000;
@@ -72,6 +72,21 @@ public class RecorderService extends Service implements SensorEventListener {
     volatile float speedKmh = -1, speedThr = 30, stopKmh = DEF_STOP_KMH;
     /** Límite de la carpeta Dashcam en la memoria interna (cuando no hay USB), en GB. */
     volatile float maxInternalGb = 2f;
+
+    // ---- aviso de choque frontal (experimental)
+    volatile boolean fcwOn;
+    volatile float fcwSens = 1f, fcwFps;
+    volatile Fcw.Result fcwResult;
+    volatile String fcwSource = "", fcwError = "";
+    private Fcw fcw;
+    private HandlerThread fcwThread;
+    private Handler fcwHandler;
+    private final java.util.concurrent.atomic.AtomicBoolean fcwBusy = new java.util.concurrent.atomic.AtomicBoolean();
+    private final android.graphics.Bitmap fcwBitmap = android.graphics.Bitmap.createBitmap(Fcw.SIZE, Fcw.SIZE, android.graphics.Bitmap.Config.ARGB_8888);
+    private final int[] fcwPixels = new int[Fcw.SIZE * Fcw.SIZE];
+    private volatile long lastCallbackFrame, fcwFrames, fcwFpsSince;
+    private int prevW, prevH;
+    private android.media.ToneGenerator tone;
     volatile long fixAt;
     private android.location.LocationManager lm;
     /** Ubicación de cada segundo de la grabación en curso (para el .srt). */
@@ -124,6 +139,13 @@ public class RecorderService extends Service implements SensorEventListener {
         speedThr = prefs.getFloat(K_SPEED, 30);
         stopKmh = prefs.getFloat(K_STOP_SPEED, DEF_STOP_KMH);
         maxInternalGb = prefs.getFloat(K_MAX_INTERNAL, 2f);
+        fcwOn = prefs.getBoolean(K_FCW, false);
+        fcwSens = prefs.getFloat(K_FCW_SENS, 1f);
+        fcwThread = new HandlerThread("fcw");
+        fcwThread.start();
+        fcwHandler = new Handler(fcwThread.getLooper());
+        main.post(beeper);
+        main.postDelayed(textureGrabber, 1000);
         openOnAcc = prefs.getBoolean(K_OPEN_ON_ACC, true);
         startGps();
 
@@ -186,6 +208,134 @@ public class RecorderService extends Service implements SensorEventListener {
         if (stopKmh >= speedThr) stopKmh = speedThr - 1;
         prefs.edit().putFloat(K_SPEED, speedThr).putFloat(K_STOP_SPEED, stopKmh).apply();
     }
+
+    void setFcw(boolean on, float sens) {
+        fcwOn = on;
+        fcwSens = sens;
+        prefs.edit().putBoolean(K_FCW, on).putFloat(K_FCW_SENS, sens).apply();
+        if (!on) fcwResult = null;
+    }
+
+    /** Pitido de prueba (para saber si se oye y a qué volumen). */
+    void testBeep() {
+        main.post(new Runnable() { public void run() { beep(250); } });
+    }
+
+    private void beep(int ms) {
+        try {
+            if (tone == null) tone = new android.media.ToneGenerator(android.media.AudioManager.STREAM_ALARM, 100);
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, ms);
+        } catch (Throwable t) {
+            fcwError = "No se pudo pitar: " + t.getMessage();
+        }
+    }
+
+    /** ¿Tiene sentido avisar? Solo con el carro avanzando. */
+    private boolean fcwActive() {
+        return fcwOn && recording && (gpsActive() ? speedKmh >= 8 : moving);
+    }
+
+    /** Pitidos: cada 0.9 s (atención), 0.4 s (peligro), 0.15 s (choque inminente). */
+    private final Runnable beeper = new Runnable() {
+        public void run() {
+            Fcw.Result r = fcwResult;
+            int level = r != null && fcwActive() && SystemClock.elapsedRealtime() - lastFcwAt < 1500 ? r.level : 0;
+            long next = 200;
+            if (level == 1) { beep(120); next = 900; }
+            else if (level == 2) { beep(120); next = 400; }
+            else if (level == 3) { beep(100); next = 150; }
+            main.postDelayed(this, next);
+        }
+    };
+    private volatile long lastFcwAt;
+
+    /** Analiza una imagen ya reducida (fcwPixels) en el hilo del detector. */
+    private void analyzePixels() {
+        fcwHandler.post(new Runnable() {
+            public void run() {
+                try {
+                    if (fcw == null) fcw = new Fcw(RecorderService.this);
+                    fcwBitmap.setPixels(fcwPixels, 0, Fcw.SIZE, 0, 0, Fcw.SIZE, Fcw.SIZE);
+                    long now = SystemClock.elapsedRealtime();
+                    Fcw.Result r = fcw.analyze(fcwBitmap, fcwSens, now);
+                    Fcw.Result prev = fcwResult;
+                    fcwResult = r;
+                    lastFcwAt = now;
+                    if (r.level >= 2 && (prev == null || prev.level < r.level)) event("AVISO DE CHOQUE nivel " + r.level + ": " + r);
+                    fcwFrames++;
+                    if (now - fcwFpsSince >= 3000) {
+                        fcwFps = fcwFrames * 1000f / (now - fcwFpsSince);
+                        fcwFrames = 0;
+                        fcwFpsSince = now;
+                    }
+                    fcwError = "";
+                } catch (Throwable t) {
+                    fcwError = "Detector: " + t;
+                } finally {
+                    fcwBusy.set(false);
+                }
+            }
+        });
+    }
+
+    /** Imagen de la cámara (NV21) → mitad derecha (vista de frente) reducida a 300×300. */
+    private final Camera.PreviewCallback frameCallback = new Camera.PreviewCallback() {
+        public void onPreviewFrame(byte[] d, Camera c) {
+            lastCallbackFrame = SystemClock.elapsedRealtime();
+            if (fcwActive() && fcwSource.startsWith("cámara") && fcwBusy.compareAndSet(false, true)) {
+                int w = prevW, h = prevH, uvBase = w * h, half = w / 2;
+                int n = Fcw.SIZE;
+                for (int y = 0; y < n; y++) {
+                    int sy = y * h / n, row = sy * w, uvRow = uvBase + (sy >> 1) * w;
+                    for (int x = 0; x < n; x++) {
+                        int sx = half + x * half / n;
+                        int Y = (d[row + sx] & 0xFF) - 16;
+                        int idx = uvRow + (sx & ~1);
+                        int V = (d[idx] & 0xFF) - 128, U = (d[idx + 1] & 0xFF) - 128;
+                        if (Y < 0) Y = 0;
+                        int r = (1192 * Y + 1634 * V) >> 10, g = (1192 * Y - 833 * V - 400 * U) >> 10, b = (1192 * Y + 2066 * U) >> 10;
+                        r = r < 0 ? 0 : r > 255 ? 255 : r;
+                        g = g < 0 ? 0 : g > 255 ? 255 : g;
+                        b = b < 0 ? 0 : b > 255 ? 255 : b;
+                        fcwPixels[y * n + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                    }
+                }
+                analyzePixels();
+            }
+            c.addCallbackBuffer(d);
+        }
+    };
+
+    /**
+     * Si la cámara no entrega imágenes por callback mientras graba, se copian de la vista previa
+     * (TextureView) unas 4 veces por segundo.
+     */
+    private final Runnable textureGrabber = new Runnable() {
+        public void run() {
+            try {
+                long now = SystemClock.elapsedRealtime();
+                if (recording && now - recordingSince > 3000 && now - lastCallbackFrame > 2000) {
+                    if (!fcwSource.startsWith("vista")) { fcwSource = "vista previa"; }
+                } else if (recording && now - lastCallbackFrame < 2000) {
+                    fcwSource = "cámara";
+                }
+                if (fcwActive() && fcwSource.startsWith("vista") && preview != null && surface != null
+                        && fcwBusy.compareAndSet(false, true)) {
+                    android.graphics.Bitmap full = preview.getBitmap(640, 360);
+                    if (full != null) {
+                        android.graphics.Bitmap right = android.graphics.Bitmap.createScaledBitmap(
+                                android.graphics.Bitmap.createBitmap(full, 320, 0, 320, 360), Fcw.SIZE, Fcw.SIZE, true);
+                        right.getPixels(fcwPixels, 0, Fcw.SIZE, 0, 0, Fcw.SIZE, Fcw.SIZE);
+                        analyzePixels();
+                    } else fcwBusy.set(false);
+                }
+            } catch (Throwable t) {
+                fcwBusy.set(false);
+                fcwError = "Vista previa: " + t.getMessage();
+            }
+            main.postDelayed(this, 250);
+        }
+    };
 
     void setMaxInternal(float gb) {
         maxInternalGb = Math.max(0.5f, Math.min(gb, 32f));
@@ -435,6 +585,13 @@ public class RecorderService extends Service implements SensorEventListener {
                 st = fallbackSurface;
             }
             camera.setPreviewTexture(st);
+            try {
+                Camera.Size ps = camera.getParameters().getPreviewSize();
+                prevW = ps.width;
+                prevH = ps.height;
+                for (int i = 0; i < 2; i++) camera.addCallbackBuffer(new byte[prevW * prevH * 3 / 2]);
+                camera.setPreviewCallbackWithBuffer(frameCallback);
+            } catch (Throwable ignored) { }
             camera.startPreview();
         } catch (Throwable t) {
             releaseCamera();
@@ -568,7 +725,10 @@ public class RecorderService extends Service implements SensorEventListener {
     }
 
     private void releaseCamera() {
+        fcwResult = null;
+        if (fcw != null) fcwHandler.post(new Runnable() { public void run() { if (fcw != null) fcw.reset(); } });
         if (camera == null) return;
+        try { camera.setPreviewCallbackWithBuffer(null); } catch (Throwable ignored) { }
         try { camera.reconnect(); } catch (Throwable ignored) { }
         try { camera.stopPreview(); } catch (Throwable ignored) { }
         try { camera.release(); } catch (Throwable ignored) { }
@@ -686,6 +846,11 @@ public class RecorderService extends Service implements SensorEventListener {
 
     @Override
     public void onDestroy() {
+        main.removeCallbacks(beeper);
+        main.removeCallbacks(textureGrabber);
+        fcwHandler.post(new Runnable() { public void run() { if (fcw != null) fcw.close(); } });
+        fcwThread.quitSafely();
+        try { if (tone != null) tone.release(); } catch (Throwable ignored) { }
         instance = null;
         cam.removeCallbacksAndMessages(null);
         cam.post(new Runnable() { public void run() { stopRecording("app cerrada"); } });
