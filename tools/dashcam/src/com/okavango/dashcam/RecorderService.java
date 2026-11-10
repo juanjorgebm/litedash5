@@ -327,7 +327,7 @@ public class RecorderService extends Service implements SensorEventListener {
         boolean gps = gpsActive();
         boolean above = gps ? speedKmh >= speedThr : v > startThr;
         // Una vez grabando, sigue hasta que el carro casi se detiene (baja de stopKmh), no al bajar del límite de arranque.
-        boolean below = gps ? speedKmh < stopKmh : v < stopThr;
+        boolean below = gps ? speedKmh <= stopKmh : v < stopThr;  // <= para que 0 signifique "detenido"
         if (above) { if (aboveSince == 0) aboveSince = now; belowSince = 0; }
         else if (below) { if (belowSince == 0) belowSince = now; aboveSince = 0; }
         else { aboveSince = 0; belowSince = 0; }
