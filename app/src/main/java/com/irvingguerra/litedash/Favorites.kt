@@ -98,7 +98,7 @@ private fun loadContacts(context: Context): Loaded {
                 val cid = c.getColumnIndex("Content_ID")
                 val num = c.getColumnIndex("Number")
                 log += "PhoneNumberDetail: ${c.count} filas"
-                while (c.moveToNext() && cid >= 0 && num >= 0) numbers.putIfAbsent(c.getLong(cid), c.getString(num).orEmpty())
+                while (c.moveToNext() && cid >= 0 && num >= 0) { val k = c.getLong(cid); if (k !in numbers) numbers[k] = c.getString(num).orEmpty() }
             }
             for ((id, name) in names) numbers[id]?.takeIf { it.isNotBlank() }?.let { out += Contact(name, it, null, false) }
             names.isNotEmpty()
