@@ -278,17 +278,20 @@ public class RecorderService extends Service implements SensorEventListener {
         });
     }
 
-    /** Imagen de la cámara (NV21) → mitad derecha (vista de frente) reducida a 300×300. */
+    /** Dónde empieza la vista de frente en la imagen del 360 (a la izquierda está la vista de arriba). */
+    static final float FRONT_X0 = 0.41f;
+
+    /** Imagen de la cámara (NV21) → vista de frente (desde FRONT_X0 hasta el borde derecho) reducida a 300×300. */
     private final Camera.PreviewCallback frameCallback = new Camera.PreviewCallback() {
         public void onPreviewFrame(byte[] d, Camera c) {
             lastCallbackFrame = SystemClock.elapsedRealtime();
             if (fcwActive() && fcwSource.startsWith("cámara") && fcwBusy.compareAndSet(false, true)) {
-                int w = prevW, h = prevH, uvBase = w * h, half = w / 2;
+                int w = prevW, h = prevH, uvBase = w * h, x0 = (int) (w * FRONT_X0), fw = w - x0;
                 int n = Fcw.SIZE;
                 for (int y = 0; y < n; y++) {
                     int sy = y * h / n, row = sy * w, uvRow = uvBase + (sy >> 1) * w;
                     for (int x = 0; x < n; x++) {
-                        int sx = half + x * half / n;
+                        int sx = x0 + x * fw / n;
                         int Y = (d[row + sx] & 0xFF) - 16;
                         int idx = uvRow + (sx & ~1);
                         int V = (d[idx] & 0xFF) - 128, U = (d[idx + 1] & 0xFF) - 128;
@@ -324,7 +327,7 @@ public class RecorderService extends Service implements SensorEventListener {
                     android.graphics.Bitmap full = preview.getBitmap(640, 360);
                     if (full != null) {
                         android.graphics.Bitmap right = android.graphics.Bitmap.createScaledBitmap(
-                                android.graphics.Bitmap.createBitmap(full, 320, 0, 320, 360), Fcw.SIZE, Fcw.SIZE, true);
+                                android.graphics.Bitmap.createBitmap(full, (int) (640 * FRONT_X0), 0, 640 - (int) (640 * FRONT_X0), 360), Fcw.SIZE, Fcw.SIZE, true);
                         right.getPixels(fcwPixels, 0, Fcw.SIZE, 0, 0, Fcw.SIZE, Fcw.SIZE);
                         analyzePixels();
                     } else fcwBusy.set(false);

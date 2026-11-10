@@ -16,7 +16,7 @@ import java.util.Map;
 
 /**
  * Aviso de choque frontal (experimental). Busca carros, motos, buses, camiones, bicis y personas en
- * la vista de frente (mitad derecha de la imagen del 360) con un detector SSD MobileNet (COCO) y
+ * la vista de frente (el 59 % derecho de la imagen del 360) con un detector SSD MobileNet (COCO) y
  * estima el peligro por lo cerca que está (ancho en la imagen) y lo rápido que se acerca (tiempo
  * hasta el choque = cuánto tarda en crecer su tamaño). NO reemplaza la atención del conductor.
  */
