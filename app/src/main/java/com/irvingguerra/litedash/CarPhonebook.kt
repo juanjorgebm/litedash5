@@ -44,10 +44,14 @@ object CarPhonebook {
     private const val PROPERTIES = 431
     private const val MAX = 2000
 
-    /** Sin contactos nuevos este rato = terminó; y el tope por si el celular no contesta. */
+    /**
+     * Termina cuando la pantalla dice que ya no está bajando y pasó [QUIET_MS] sin contactos nuevos. Mientras diga que
+     * sigue bajando se espera (el celular hace pausas largas con agendas grandes), hasta [STALL_MS] sin nada nuevo.
+     */
     private const val QUIET_MS = 4_000L
-    private const val LIMIT_MS = 60_000L
-    private const val FIRST_MS = 20_000L
+    private const val STALL_MS = 30_000L
+    private const val LIMIT_MS = 300_000L
+    private const val FIRST_MS = 30_000L
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -176,7 +180,10 @@ object CarPhonebook {
                         val now = System.currentTimeMillis()
                         val (count, lastAt) = synchronized(found) { found.size to last }
                         if (count > 0) main.post { status = "Bajando contactos del celular… $count" }
-                        if (count > 0 && now - lastAt > QUIET_MS) break
+                        val downloading = runCatching { transact(pbap, PBAP, TX_IS_DOWNLOADING, {}) { it.readInt() != 0 } }.getOrDefault(false)
+                        if (count > 0 && !downloading && now - lastAt > QUIET_MS) break
+                        if (count > 0 && now - lastAt > STALL_MS) break
+                        if (count == 0 && !downloading && now - started > QUIET_MS * 2) break
                         if (count == 0 && now - started > FIRST_MS) break
                         if (now - started > LIMIT_MS) break
                     }
