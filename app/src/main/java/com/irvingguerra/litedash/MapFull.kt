@@ -41,6 +41,7 @@ import com.irvingguerra.litedash.core.ui.Radius
 import com.irvingguerra.litedash.core.ui.Typography
 import com.irvingguerra.litedash.feature.apps.App
 import com.irvingguerra.litedash.feature.map.MapLook
+import com.irvingguerra.litedash.feature.map.MapOrientation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -54,7 +55,10 @@ fun MapFullScreen(d: Dependencies, data: String, app: App?, close: () -> Unit) {
     val c = LocalColors.current
     val context = LocalContext.current
     val (granted, ask) = rememberGpsPermission(d)
-    val look = remember(data) { MapLook.parse(data) }
+    val saved = remember(data) { MapLook.parse(data) }
+    // Por defecto el mapa gira con el rumbo y la flecha queda hacia arriba; un botón lo deja con el norte arriba.
+    var north by remember { mutableStateOf(saved.orientation == MapOrientation.NORTH) }
+    val look = saved.copy(orientation = if (north) MapOrientation.NORTH else MapOrientation.HEADING)
     val position = d.trip.position
     // Redondeado a unos 300 m: al moverse poco no se vuelve a buscar.
     val lat = Math.round((position?.latitude ?: MyCar.LATITUDE) * 300) / 300.0
@@ -66,7 +70,12 @@ fun MapFullScreen(d: Dependencies, data: String, app: App?, close: () -> Unit) {
     PanelScaffold(stringResource(R.string.tile_map), close) {
         Row(Modifier.weight(1f).fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Card(Modifier.weight(1.1f).fillMaxHeight()) {
-                if (granted) LiveMap(d, look, Modifier.fillMaxSize())
+                if (granted) Box(Modifier.fillMaxSize()) {
+                    LiveMap(d, look, Modifier.fillMaxSize())
+                    Box(Modifier.align(Alignment.TopStart).padding(10.dp)) {
+                        Chip(stringResource(if (north) R.string.map_north else R.string.map_heading), true) { north = !north }
+                    }
+                }
                 else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Button(stringResource(R.string.tap_to_enable), ask, primary = true) }
             }
             Column(Modifier.weight(1f).fillMaxHeight()) {

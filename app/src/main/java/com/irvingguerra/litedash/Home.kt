@@ -117,6 +117,7 @@ sealed interface Panel {
     data object Drawer : Panel
     /** La radio por internet a pantalla completa: explorar por país, género o nombre. */
     data object RadioFull : Panel
+    data object WeatherFull : Panel
     /** El mapa a pantalla completa con los lugares cercanos; [data] es el aspecto de la pieza que se tocó. */
     data class MapFull(val data: String) : Panel
     data object Settings : Panel
@@ -251,7 +252,14 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
                     p,
                     car,
                     // Una imagen sin foto abre su panel para elegirla; lo demás crece.
-                    onClick = { if (p.type == TileTypes.IMAGE && p.data.isEmpty()) actions.onPanel(Panel.CustomizeImage(p.id)) else actions.onCarOnly(p) },
+                    onClick = {
+                        when {
+                            p.type == TileTypes.IMAGE && p.data.isEmpty() -> actions.onPanel(Panel.CustomizeImage(p.id))
+                            // El Okavango con su clima: un toque abre el pronóstico por hora y por día.
+                            car == null && p.type != TileTypes.IMAGE && p.type != TileTypes.ROAD -> actions.onPanel(Panel.WeatherFull)
+                            else -> actions.onCarOnly(p)
+                        }
+                    },
                     modifier = Modifier.fillMaxSize(),
                     onTires = onTires,
                 )
@@ -653,6 +661,7 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
         when (val p = panel) {
             null -> Unit
             Panel.Drawer -> DrawerPanel(d, apps, close = { panel = null })
+            Panel.WeatherFull -> WeatherFullScreen(d, close = { panel = null })
             Panel.RadioFull -> RadioScreen({ panel = null }, Modifier.fillMaxSize())
             is Panel.MapFull -> MapFullScreen(d, p.data, mapApp(d, apps), close = { panel = null })
             Panel.Settings, Panel.Updates, Panel.Workshop, Panel.MusicSettings, Panel.TiresSettings -> SettingsPanel(

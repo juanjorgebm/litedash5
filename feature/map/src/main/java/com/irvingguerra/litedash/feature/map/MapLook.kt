@@ -19,11 +19,11 @@ enum class MapDetail(val stored: String) { FULL("full"), MINIMAL("minimal") }
 
 /**
  * Cómo se ve el widget Mapa; se guarda en su `Tile.data` como "orientation=heading;view=tilted…".
- * Lo de fábrica (minimalista, norte arriba, plano, automático, como el tema) no se escribe.
+ * Lo de fábrica (minimalista, hacia donde vas, plano, automático, como el tema) no se escribe.
  */
 @Immutable
 data class MapLook(
-    val orientation: MapOrientation = MapOrientation.NORTH,
+    val orientation: MapOrientation = MapOrientation.HEADING,
     val view: MapView = MapView.FLAT,
     val zoom: MapZoom = MapZoom.AUTO,
     val style: MapStyle = MapStyle.THEME,
@@ -37,7 +37,7 @@ data class MapLook(
     }
 
     fun encode(): String = listOfNotNull(
-        orientation.takeIf { it != MapOrientation.NORTH }?.let { "$ORIENTATION=${it.stored}" },
+        orientation.takeIf { it != MapOrientation.HEADING }?.let { "$ORIENTATION=${it.stored}" },
         view.takeIf { it != MapView.FLAT }?.let { "$VIEW=${it.stored}" },
         zoom.takeIf { it != MapZoom.AUTO }?.let { "$ZOOM=${it.stored}" },
         style.takeIf { it != MapStyle.THEME }?.let { "$STYLE=${it.stored}" },
@@ -54,7 +54,7 @@ data class MapLook(
         fun parse(data: String): MapLook {
             val f = data.split(';').mapNotNull { part -> part.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
             return MapLook(
-                orientation = MapOrientation.entries.firstOrNull { it.stored == f[ORIENTATION] } ?: MapOrientation.NORTH,
+                orientation = MapOrientation.entries.firstOrNull { it.stored == f[ORIENTATION] } ?: MapOrientation.HEADING,
                 view = MapView.entries.firstOrNull { it.stored == f[VIEW] } ?: MapView.FLAT,
                 zoom = MapZoom.entries.firstOrNull { it.stored == f[ZOOM] } ?: MapZoom.AUTO,
                 style = MapStyle.entries.firstOrNull { it.stored == f[STYLE] } ?: MapStyle.THEME,
