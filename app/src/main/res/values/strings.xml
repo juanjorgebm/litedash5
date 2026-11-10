@@ -449,11 +449,11 @@
     <string name="tile_bluetooth_help">Enciende y apaga el Bluetooth con un toque</string>
     <string name="toggle_on">Encendido</string>
     <string name="tile_favorites">Favoritos</string>
-    <string name="tile_favorites_help">Tus contactos con estrella; un toque llama</string>
+    <string name="tile_favorites_help">Los favoritos del celular conectado por Bluetooth; un toque llama</string>
     <string name="tile_widget">Widget de Android</string>
     <string name="tile_widget_help">Un widget de otra app (por ejemplo Musixmatch)</string>
     <string name="favorites_allow">Permitir contactos</string>
-    <string name="favorites_empty">No hay contactos con estrella. Márcalos en el celular y sincroniza los contactos por Bluetooth.</string>
+    <string name="favorites_empty">Conecta tu celular por Bluetooth y sincroniza sus contactos (permite la agenda en el celular). Aquí salen sus favoritos.</string>
     <string name="my_okavango">Mi Okavango</string>
     <string name="weather_unknown">Sin clima</string>
     <string name="widget_bind_failed">No se pudo agregar el widget: esta pantalla no deja agregarlos.</string>
