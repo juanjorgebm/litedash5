@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
     private TextView videosHeader;
     // Ajustes
     private Switch autoSwitch, impactSwitch, openSwitch;
-    private TextView speedVal, gpsLine;
+    private TextView speedVal, stopSpeedVal, gpsLine;
     private TextView impactVal, impactLive;
     private LinearLayout cameraRow;
     private int shownCamera = -1;
@@ -301,7 +301,21 @@ public class MainActivity extends Activity {
             public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setSpeed(s.speedThr + 5); }
         }));
         gpsCard.addView(sr);
-        TextView gtip = text("Con señal GPS empieza a grabar al pasar de esa velocidad y sigue hasta que el carro baja de 1 km/h (casi detenido). La ubicación queda en el video. Sin GPS se usa la vibración (abajo).", 15, GREY);
+        stopSpeedVal = text("", 22, AMBER);
+        LinearLayout sr2 = new LinearLayout(this);
+        sr2.setGravity(Gravity.CENTER_VERTICAL);
+        sr2.setPadding(0, dp(8), 0, 0);
+        sr2.addView(text("Deja de grabar al bajar de (km/h)", 19, Color.WHITE), new LinearLayout.LayoutParams(dp(380), -2));
+        sr2.addView(round("−", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setStopSpeed(s.stopKmh - 1); }
+        }));
+        stopSpeedVal.setGravity(Gravity.CENTER);
+        sr2.addView(stopSpeedVal, new LinearLayout.LayoutParams(dp(90), -2));
+        sr2.addView(round("+", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setStopSpeed(s.stopKmh + 1); }
+        }));
+        gpsCard.addView(sr2);
+        TextView gtip = text("Con señal GPS empieza a grabar al pasar de la primera velocidad y sigue hasta bajar de la segunda (0 = hasta detenerse del todo). La ubicación queda en el video. Sin GPS se usa la vibración (abajo).", 15, GREY);
         gtip.setPadding(0, dp(6), 0, 0);
         gpsCard.addView(gtip);
 
@@ -440,6 +454,7 @@ public class MainActivity extends Activity {
                 startVal.setText(String.format(Locale.US, "%.2f", s.startThr));
                 impactVal.setText(String.format(Locale.US, "%.1f", s.impactThr));
                 speedVal.setText(String.format(Locale.US, "%.0f", s.speedThr));
+                stopSpeedVal.setText(String.format(Locale.US, "%.0f", s.stopKmh));
                 String g = !s.hasGps ? "Esta pantalla no tiene GPS: se usa la vibración"
                         : s.gpsActive() ? String.format(Locale.US, "GPS: %.0f km/h  ·  %.5f, %.5f", s.speedKmh, s.lat, s.lon)
                         : "GPS: buscando señal… (mientras tanto se usa la vibración)";

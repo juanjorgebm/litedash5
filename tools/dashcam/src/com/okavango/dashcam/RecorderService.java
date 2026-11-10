@@ -47,11 +47,11 @@ public class RecorderService extends Service implements SensorEventListener {
     static final String PREFS = "dashcam";
     static final String K_ARMED = "armed", K_START = "start_thr", K_STOP = "stop_thr",
             K_IMPACT_ON = "impact_on", K_IMPACT_THR = "impact_thr", K_CAM = "camera_id",
-            K_SPEED = "speed_kmh", K_OPEN_ON_ACC = "open_on_acc";
+            K_SPEED = "speed_kmh", K_STOP_SPEED = "stop_kmh", K_OPEN_ON_ACC = "open_on_acc";
     static final float DEF_START = 0.10f, DEF_STOP = 0.07f, DEF_IMPACT = 3.0f;
     /** Segundos seguidos por encima/debajo del umbral para decidir "en marcha" o "detenido". */
     static final long START_MS = 3000, STOP_MS = 2000;
-    static final float STOP_KMH = 1f;
+    static final float DEF_STOP_KMH = 1f;
     static final long SEGMENT_MS = 3 * 60 * 1000;
     static final long CLIP_MS = 60 * 1000;
 
@@ -69,7 +69,7 @@ public class RecorderService extends Service implements SensorEventListener {
     // GPS (si la pantalla lo tiene): ubicación en el video y velocidad para decidir cuándo grabar.
     volatile boolean hasGps, openOnAcc = true;
     volatile double lat, lon;
-    volatile float speedKmh = -1, speedThr = 30;
+    volatile float speedKmh = -1, speedThr = 30, stopKmh = DEF_STOP_KMH;
     volatile long fixAt;
     private android.location.LocationManager lm;
     /** Ubicación de cada segundo de la grabación en curso (para el .srt). */
@@ -120,6 +120,7 @@ public class RecorderService extends Service implements SensorEventListener {
         impactThr = prefs.getFloat(K_IMPACT_THR, DEF_IMPACT);
         cameraId = prefs.getInt(K_CAM, 0);
         speedThr = prefs.getFloat(K_SPEED, 30);
+        stopKmh = prefs.getFloat(K_STOP_SPEED, DEF_STOP_KMH);
         openOnAcc = prefs.getBoolean(K_OPEN_ON_ACC, true);
         startGps();
 
@@ -179,7 +180,14 @@ public class RecorderService extends Service implements SensorEventListener {
 
     void setSpeed(float kmh) {
         speedThr = Math.max(5, Math.min(kmh, 120));
-        prefs.edit().putFloat(K_SPEED, speedThr).apply();
+        if (stopKmh >= speedThr) stopKmh = speedThr - 1;
+        prefs.edit().putFloat(K_SPEED, speedThr).putFloat(K_STOP_SPEED, stopKmh).apply();
+    }
+
+    /** Velocidad a la que deja de grabar (con GPS), siempre por debajo de la de arranque. */
+    void setStopSpeed(float kmh) {
+        stopKmh = Math.max(0, Math.min(kmh, speedThr - 1));
+        prefs.edit().putFloat(K_STOP_SPEED, stopKmh).apply();
     }
 
     void setOpenOnAcc(boolean on) {
@@ -318,8 +326,8 @@ public class RecorderService extends Service implements SensorEventListener {
         // Con GPS manda la velocidad (graba a partir de speedThr km/h); sin GPS, la vibración.
         boolean gps = gpsActive();
         boolean above = gps ? speedKmh >= speedThr : v > startThr;
-        // Una vez grabando, sigue hasta que el carro casi se detiene (menos de 1 km/h), no al bajar del límite.
-        boolean below = gps ? speedKmh < STOP_KMH : v < stopThr;
+        // Una vez grabando, sigue hasta que el carro casi se detiene (baja de stopKmh), no al bajar del límite de arranque.
+        boolean below = gps ? speedKmh < stopKmh : v < stopThr;
         if (above) { if (aboveSince == 0) aboveSince = now; belowSince = 0; }
         else if (below) { if (belowSince == 0) belowSince = now; aboveSince = 0; }
         else { aboveSince = 0; belowSince = 0; }
