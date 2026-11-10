@@ -118,6 +118,7 @@ sealed interface Panel {
     /** La radio por internet a pantalla completa: explorar por país, género o nombre. */
     data object RadioFull : Panel
     data object WeatherFull : Panel
+    data object Contacts : Panel
     /** El mapa a pantalla completa con los lugares cercanos; [data] es el aspecto de la pieza que se tocó. */
     data class MapFull(val data: String) : Panel
     data object Settings : Panel
@@ -307,7 +308,7 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
                 onExpand = expand,
             )
         }
-        TileTypes.FAVORITES -> FavoritesTile()
+        TileTypes.FAVORITES -> FavoritesTile(onOpen = { actions.onPanel(Panel.Contacts) })
         TileTypes.CAR_NAV -> {
             val navApp = mapApp(d, apps)
             CarNavTile(d, onOpen = remember(navApp) { { actions.onNavigate(navApp) } })
@@ -661,6 +662,7 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
         when (val p = panel) {
             null -> Unit
             Panel.Drawer -> DrawerPanel(d, apps, close = { panel = null })
+            Panel.Contacts -> ContactsScreen(close = { panel = null })
             Panel.WeatherFull -> WeatherFullScreen(d, close = { panel = null })
             Panel.RadioFull -> RadioScreen({ panel = null }, Modifier.fillMaxSize())
             is Panel.MapFull -> MapFullScreen(d, p.data, mapApp(d, apps), close = { panel = null })

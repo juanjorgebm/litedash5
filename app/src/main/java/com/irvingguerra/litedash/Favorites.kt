@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,8 +56,6 @@ import com.irvingguerra.litedash.core.ui.Typography
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Un contacto favorito: nombre, número y foto (si tiene). */
-private class Favorite(val name: String, val number: String, val photo: ImageBitmap?)
 
 /** Cuántos favoritos caben en la pieza (dos columnas por dos filas). */
 private const val MAX_FAVORITES = 6
@@ -64,65 +63,85 @@ private const val MAX_FAVORITES = 6
 private fun hasContacts(context: Context) =
     ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
-/** Lo que se encontró: los favoritos del celular y, para depurar, las cuentas de contactos que hay. */
-private class Loaded(val favorites: List<Favorite>, val accounts: String)
+/** Un contacto del celular conectado. */
+private class Contact(val name: String, val number: String, val photo: ImageBitmap?, val starred: Boolean)
+
+/** Lo que se encontró: los contactos del celular y, para depurar, qué se probó y qué contestó cada fuente. */
+private class Loaded(val all: List<Contact>, val diag: String) {
+    /** Los marcados con estrella; si no hay marca, los primeros de la lista. */
+    val favorites: List<Contact> get() = all.filter { it.starred }.ifEmpty { all }.take(MAX_FAVORITES)
+}
 
 /**
- * Los favoritos del celular conectado por Bluetooth. La pantalla baja la agenda del celular (PBAP) a los
- * contactos de Android como cuenta propia (con tipo de cuenta); los de la pantalla misma no tienen cuenta.
- * Solo se leen los de cuenta: primero los marcados con estrella; si el celular no manda esa marca, los más
- * llamados. Sin agenda del celular no hay nada que mostrar (se pide conectar el celular). Solo en IO.
+ * Los contactos del celular conectado por Bluetooth. La pantalla (chip nFore) los baja por PBAP y los guarda en su
+ * propia base (`content://nfore.db.provider`, tablas PhoneBookContent y PhoneNumberDetail) o, según la
+ * configuración, en los contactos de Android como cuenta. Se prueban las dos y se anota qué contestó cada una.
+ * Los contactos locales sin cuenta (los de la pantalla) no se usan. Solo en IO.
  */
-private fun loadFavorites(context: Context): Loaded = runCatching {
+private fun loadContacts(context: Context): Loaded {
+    val log = ArrayList<String>()
+    val out = ArrayList<Contact>()
     val resolver = context.contentResolver
-    // Contactos que vienen de una cuenta (celular por Bluetooth), y cuáles cuentas hay.
-    val synced = HashSet<Long>()
-    val accounts = LinkedHashSet<String>()
-    resolver.query(
-        ContactsContract.RawContacts.CONTENT_URI,
-        arrayOf(ContactsContract.RawContacts.CONTACT_ID, ContactsContract.RawContacts.ACCOUNT_TYPE),
-        "${ContactsContract.RawContacts.DELETED} = 0",
-        null,
-        null,
-    )?.use { c ->
-        while (c.moveToNext()) {
-            val type = c.getString(1)
-            accounts += type ?: "local"
-            if (!type.isNullOrBlank()) synced += c.getLong(0)
-        }
-    }
-    val label = accounts.joinToString()
-    if (synced.isEmpty()) return@runCatching Loaded(emptyList(), label)
-    class Row(val id: Long, val name: String, val number: String, val starred: Boolean, val times: Int, val photo: String?)
-    val rows = LinkedHashMap<Long, Row>()
-    resolver.query(
-        Phone.CONTENT_URI,
-        arrayOf(Phone.CONTACT_ID, Phone.DISPLAY_NAME, Phone.NUMBER, Phone.STARRED, Phone.TIMES_CONTACTED, Phone.PHOTO_THUMBNAIL_URI),
-        null,
-        null,
-        "${Phone.IS_PRIMARY} DESC",
-    )?.use { c ->
-        while (c.moveToNext()) {
-            val id = c.getLong(0)
-            if (id !in synced || id in rows) continue
-            val number = c.getString(2).orEmpty()
-            if (number.isBlank()) continue
-            rows[id] = Row(id, c.getString(1).orEmpty(), number, c.getInt(3) == 1, c.getInt(4), c.getString(5))
-        }
-    }
-    val starred = rows.values.filter { it.starred }
-    val chosen = (if (starred.isNotEmpty()) starred.sortedBy { it.name.lowercase() } else rows.values.sortedWith(compareByDescending<Row> { it.times }.thenBy { it.name.lowercase() }))
-        .take(MAX_FAVORITES)
-    Loaded(
-        chosen.map { r ->
-            val photo = r.photo?.let { uri ->
-                runCatching { resolver.openInputStream(Uri.parse(uri))?.use { BitmapFactory.decodeStream(it)?.asImageBitmap() } }.getOrNull()
+    // 1) La base de la pantalla.
+    val bases = listOf("content://nfore.db.provider/PhoneBookContent", "content://nfore.db.provider/phonebookcontent", "content://nfore.db.provider/PhoneBookContent/")
+    for (base in bases) {
+        val ok = runCatching {
+            val names = LinkedHashMap<Long, String>()
+            resolver.query(base.toUri(), null, null, null, null)?.use { c ->
+                val id = c.getColumnIndex("_id")
+                val name = c.getColumnIndex("FullName")
+                log += "PhoneBookContent: ${c.count} filas (${c.columnNames.take(8).joinToString()})"
+                while (c.moveToNext() && id >= 0 && name >= 0) names[c.getLong(id)] = c.getString(name).orEmpty()
+            } ?: error("sin respuesta")
+            val numbers = HashMap<Long, String>()
+            resolver.query(base.replace("PhoneBookContent", "PhoneNumberDetail", true).toUri(), null, null, null, null)?.use { c ->
+                val cid = c.getColumnIndex("Content_ID")
+                val num = c.getColumnIndex("Number")
+                log += "PhoneNumberDetail: ${c.count} filas"
+                while (c.moveToNext() && cid >= 0 && num >= 0) numbers.putIfAbsent(c.getLong(cid), c.getString(num).orEmpty())
             }
-            Favorite(r.name, r.number, photo)
-        },
-        label,
-    )
-}.getOrDefault(Loaded(emptyList(), ""))
+            for ((id, name) in names) numbers[id]?.takeIf { it.isNotBlank() }?.let { out += Contact(name, it, null, false) }
+            names.isNotEmpty()
+        }.onFailure { log += "nFore: ${it.javaClass.simpleName} ${it.message.orEmpty().take(70)}" }.getOrDefault(false)
+        if (ok) break
+    }
+    // 2) Los contactos de Android que vienen de una cuenta (celular sincronizado).
+    runCatching {
+        val synced = HashSet<Long>()
+        val accounts = LinkedHashSet<String>()
+        resolver.query(
+            ContactsContract.RawContacts.CONTENT_URI,
+            arrayOf(ContactsContract.RawContacts.CONTACT_ID, ContactsContract.RawContacts.ACCOUNT_TYPE),
+            "${ContactsContract.RawContacts.DELETED} = 0", null, null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val type = c.getString(1)
+                accounts += type ?: "local"
+                if (!type.isNullOrBlank()) synced += c.getLong(0)
+            }
+        }
+        log += "Contactos Android: ${accounts.joinToString().ifBlank { "vacío" }}"
+        if (synced.isNotEmpty()) {
+            val seen = HashSet<Long>()
+            resolver.query(
+                Phone.CONTENT_URI,
+                arrayOf(Phone.CONTACT_ID, Phone.DISPLAY_NAME, Phone.NUMBER, Phone.STARRED, Phone.PHOTO_THUMBNAIL_URI),
+                null, null, "${Phone.IS_PRIMARY} DESC",
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getLong(0)
+                    val number = c.getString(2).orEmpty()
+                    if (id !in synced || number.isBlank() || !seen.add(id)) continue
+                    val photo = c.getString(4)?.let { uri ->
+                        runCatching { resolver.openInputStream(Uri.parse(uri))?.use { BitmapFactory.decodeStream(it)?.asImageBitmap() } }.getOrNull()
+                    }
+                    out += Contact(c.getString(1).orEmpty(), number, photo, c.getInt(3) == 1)
+                }
+            }
+        }
+    }.onFailure { log += "Contactos Android: ${it.javaClass.simpleName}" }
+    return Loaded(out.sortedBy { it.name.lowercase() }, log.joinToString("\n"))
+}
 
 /** Llama al número (directo con permiso; si no, el marcador con el número puesto). */
 private fun call(context: Context, number: String) {
@@ -135,7 +154,7 @@ private fun call(context: Context, number: String) {
 
 /** Favoritos de la agenda: fotos redondas con su nombre; un toque llama. */
 @Composable
-fun FavoritesTile() {
+fun FavoritesTile(onOpen: () -> Unit = {}) {
     val c = LocalColors.current
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasContacts(context)) }
@@ -143,9 +162,9 @@ fun FavoritesTile() {
         granted = hasContacts(context)
     }
     val loaded by produceState<Loaded?>(null, granted) {
-        value = if (granted) withContext(Dispatchers.IO) { loadFavorites(context) } else Loaded(emptyList(), "")
+        value = if (granted) withContext(Dispatchers.IO) { loadContacts(context) } else Loaded(emptyList(), "")
     }
-    Card(Modifier.fillMaxSize()) {
+    Card(Modifier.fillMaxSize().clickable(onClick = onOpen)) {
         Column(Modifier.fillMaxSize().padding(20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Label(stringResource(R.string.tile_favorites), Typography.title, maxLines = 1, modifier = Modifier.weight(1f))
@@ -164,7 +183,7 @@ fun FavoritesTile() {
                     if (list != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Label(stringResource(R.string.favorites_empty), Typography.body.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), c.textMuted, 4)
                         // Qué cuentas de contactos hay en la pantalla: ayuda a saber dónde guarda la agenda del celular.
-                        loaded?.accounts?.takeIf { it.isNotBlank() }?.let { Label(it, Typography.small, c.textMuted, 2, Modifier.padding(top = 6.dp)) }
+                        loaded?.diag?.takeIf { it.isNotBlank() }?.let { Label(it, Typography.small, c.textMuted, 6, Modifier.padding(top = 6.dp)) }
                     }
                 }
                 else -> BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp)) {
@@ -186,7 +205,7 @@ fun FavoritesTile() {
 }
 
 @Composable
-private fun FavoriteCell(f: Favorite, avatar: androidx.compose.ui.unit.Dp) {
+private fun FavoriteCell(f: Contact, avatar: androidx.compose.ui.unit.Dp) {
     val c = LocalColors.current
     val context = LocalContext.current
     Column(
@@ -201,5 +220,38 @@ private fun FavoriteCell(f: Favorite, avatar: androidx.compose.ui.unit.Dp) {
             else Label(f.name.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "?", Typography.title.copy(fontSize = (avatar.value * 0.42f).sp, fontWeight = FontWeight.Bold), c.onPrimary)
         }
         Label(f.name.substringBefore(' '), Typography.subtitle, maxLines = 1, modifier = Modifier.padding(top = 6.dp).widthIn(max = avatar + 24.dp))
+    }
+}
+
+/**
+ * Todos los contactos del celular conectado, en grande: un toque llama. Si no sale ninguno, se ve qué
+ * encontró cada fuente (la base de la pantalla y los contactos de Android) para saber qué pasa.
+ */
+@Composable
+fun ContactsScreen(close: () -> Unit) {
+    val c = LocalColors.current
+    val context = LocalContext.current
+    val loaded by produceState<Loaded?>(null) { value = withContext(Dispatchers.IO) { loadContacts(context) } }
+    PanelScaffold(stringResource(R.string.tile_favorites), close) {
+        val l = loaded
+        when {
+            l == null -> Label(stringResource(R.string.places_loading), Typography.body, c.textMuted)
+            l.all.isEmpty() -> Column {
+                Label(stringResource(R.string.favorites_empty), Typography.subtitle, c.textMuted, 4)
+                Label(l.diag, Typography.body, c.textMuted, 12, Modifier.padding(top = 12.dp))
+            }
+            else -> androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(bottom = 16.dp)) {
+                items(l.all.size) { i ->
+                    val f = l.all[i]
+                    Row(
+                        Modifier.fillMaxWidth().clickable { call(context, f.number) }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Label(f.name, Typography.subtitle, maxLines = 1, modifier = Modifier.weight(1f))
+                        Label(f.number, Typography.body, c.textMuted, 1)
+                    }
+                }
+            }
+        }
     }
 }
