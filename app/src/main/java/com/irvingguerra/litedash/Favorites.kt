@@ -82,9 +82,28 @@ private fun loadContacts(context: Context): Loaded {
     val log = ArrayList<String>()
     val out = ArrayList<Contact>()
     val resolver = context.contentResolver
+    // 0) El proveedor de la app Teléfono de fábrica (btphonelogic): guarda los contactos del celular conectado.
+    runCatching {
+        val uri = "content://com.neusoft.geely.btphonelogic.utility.ContactProvider/contact".toUri()
+        val c = resolver.query(uri, null, null, null, null)
+        if (c == null) log += "Teléfono de fábrica: sin respuesta"
+        else c.use {
+            val cols = it.columnNames.toList()
+            log += "Teléfono de fábrica: ${it.count} filas (${cols.take(10).joinToString()})"
+            // Las columnas no se conocen: nombre = la que diga name; número = la que diga num/phone/tel.
+            val name = cols.indexOfFirst { n -> n.contains("name", true) }
+            val number = cols.indexOfFirst { n -> n.contains("num", true) || n.contains("phone", true) || n.contains("tel", true) }
+            val star = cols.indexOfFirst { n -> n.contains("fav", true) || n.contains("star", true) || n.contains("collect", true) }
+            while (it.moveToNext() && name >= 0 && number >= 0) {
+                val n = it.getString(name).orEmpty()
+                val num = it.getString(number).orEmpty()
+                if (num.isNotBlank()) out += Contact(n.ifBlank { num }, num, null, star >= 0 && (it.getString(star) ?: "0") !in setOf("", "0", "false"))
+            }
+        }
+    }.onFailure { log += "Teléfono de fábrica: ${it.javaClass.simpleName} ${it.message.orEmpty().take(70)}" }
     // 1) La base de la pantalla.
     val bases = listOf("content://nfore.db.provider/PhoneBookContent", "content://nfore.db.provider/phonebookcontent", "content://nfore.db.provider/PhoneBookContent/")
-    for (base in bases) {
+    if (out.isEmpty()) for (base in bases) {
         val ok = runCatching {
             val names = LinkedHashMap<Long, String>()
             resolver.query(base.toUri(), null, null, null, null)?.use { c ->
