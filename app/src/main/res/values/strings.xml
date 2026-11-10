@@ -453,6 +453,7 @@
     <string name="tile_widget">Widget de Android</string>
     <string name="tile_widget_help">Un widget de otra app (por ejemplo Musixmatch)</string>
     <string name="favorites_allow">Permitir contactos</string>
+    <string name="favorites_pick">Toca para abrir tus contactos y marca con la estrella los que quieras aquí.</string>
     <string name="favorites_empty">Conecta tu celular por Bluetooth y sincroniza sus contactos (permite la agenda en el celular). Aquí salen sus favoritos.</string>
     <string name="my_okavango">Mi Okavango</string>
     <string name="weather_unknown">Sin clima</string>

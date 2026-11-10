@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -49,6 +50,7 @@ import androidx.core.net.toUri
 import com.irvingguerra.litedash.core.ui.Button
 import com.irvingguerra.litedash.core.ui.Card
 import com.irvingguerra.litedash.core.ui.Icon
+import com.irvingguerra.litedash.core.ui.IconButton
 import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
@@ -68,8 +70,24 @@ private class Contact(val name: String, val number: String, val photo: ImageBitm
 
 /** Lo que se encontró: los contactos del celular y, para depurar, qué se probó y qué contestó cada fuente. */
 private class Loaded(val all: List<Contact>, val diag: String) {
-    /** Los marcados con estrella; si no hay marca, los primeros de la lista. */
-    val favorites: List<Contact> get() = all.filter { it.starred }.ifEmpty { all }.take(MAX_FAVORITES)
+    /** Los que marcaste con estrella en LiteDash (o que el celular manda como favoritos). */
+    fun favorites(chosen: Set<String>): List<Contact> = all.filter { it.starred || digits(it.number) in chosen }.distinctBy { digits(it.number) }.take(MAX_FAVORITES)
+}
+
+private fun digits(number: String) = number.filter { it.isDigit() }
+
+/** Los favoritos que marcas tú (la app del carro no tiene favoritos): los números, guardados en las preferencias. */
+private object FavContacts {
+    var version by mutableIntStateOf(0)
+    private fun prefs(context: Context) = context.getSharedPreferences("favcontacts", Context.MODE_PRIVATE)
+    fun get(context: Context): Set<String> = runCatching { prefs(context).getStringSet("numbers", emptySet())!!.toSet() }.getOrDefault(emptySet())
+    fun toggle(context: Context, number: String) {
+        val key = digits(number)
+        val now = get(context).toMutableSet()
+        if (!now.remove(key)) now += key
+        prefs(context).edit().putStringSet("numbers", now).apply()
+        version++
+    }
 }
 
 /**
@@ -189,7 +207,8 @@ fun FavoritesTile(onOpen: () -> Unit = {}) {
                 Label(stringResource(R.string.tile_favorites), Typography.title, maxLines = 1, modifier = Modifier.weight(1f))
                 Icon(Icons.starFilled, c.accent, 26.dp)
             }
-            val list = loaded?.favorites
+            val chosen = remember(FavContacts.version) { FavContacts.get(context) }
+            val list = loaded?.favorites(chosen)
             when {
                 !granted -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Button(
@@ -200,9 +219,10 @@ fun FavoritesTile(onOpen: () -> Unit = {}) {
                 }
                 list.isNullOrEmpty() -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     if (list != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Label(stringResource(R.string.favorites_empty), Typography.body.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), c.textMuted, 4)
-                        // Qué cuentas de contactos hay en la pantalla: ayuda a saber dónde guarda la agenda del celular.
-                        loaded?.diag?.takeIf { it.isNotBlank() }?.let { Label(it, Typography.small, c.textMuted, 6, Modifier.padding(top = 6.dp)) }
+                        val has = loaded?.all?.isNotEmpty() == true
+                        Label(stringResource(if (has) R.string.favorites_pick else R.string.favorites_empty), Typography.body.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), c.textMuted, 4)
+                        // Sin contactos: qué encontró cada fuente, para saber dónde guarda la agenda el celular.
+                        loaded?.diag?.takeIf { it.isNotBlank() && !has }?.let { Label(it, Typography.small, c.textMuted, 6, Modifier.padding(top = 6.dp)) }
                     }
                 }
                 else -> BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp)) {
@@ -259,15 +279,26 @@ fun ContactsScreen(close: () -> Unit) {
                 Label(stringResource(R.string.favorites_empty), Typography.subtitle, c.textMuted, 4)
                 Label(l.diag, Typography.body, c.textMuted, 12, Modifier.padding(top = 12.dp))
             }
-            else -> androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(bottom = 16.dp)) {
-                items(l.all.size) { i ->
-                    val f = l.all[i]
-                    Row(
-                        Modifier.fillMaxWidth().clickable { call(context, f.number) }.padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Label(f.name, Typography.subtitle, maxLines = 1, modifier = Modifier.weight(1f))
-                        Label(f.number, Typography.body, c.textMuted, 1)
+            else -> {
+                val chosen = remember(FavContacts.version) { FavContacts.get(context) }
+                // Los favoritos primero; sin repetir el mismo número (la pantalla repite a veces el contacto).
+                val rows = remember(l, chosen) {
+                    l.all.distinctBy { digits(it.name) + "|" + digits(it.number) }
+                        .sortedWith(compareByDescending<Contact> { digits(it.number) in chosen || it.starred }.thenBy { it.name.lowercase() })
+                }
+                Label(stringResource(R.string.favorites_pick), Typography.small, c.textMuted, 2)
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(bottom = 16.dp)) {
+                    items(rows.size) { i ->
+                        val f = rows[i]
+                        val fav = f.starred || digits(f.number) in chosen
+                        Row(
+                            Modifier.fillMaxWidth().clickable { call(context, f.number) }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Label(f.name, Typography.subtitle, maxLines = 1, modifier = Modifier.weight(1f))
+                            Label(f.number, Typography.body, c.textMuted, 1)
+                            IconButton(if (fav) Icons.starFilled else Icons.star, { FavContacts.toggle(context, f.number) }, size = 64.dp, color = if (fav) c.accent else c.textMuted)
+                        }
                     }
                 }
             }
