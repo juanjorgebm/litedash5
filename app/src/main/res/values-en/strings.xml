@@ -445,6 +445,8 @@
     <string name="tile_widget">Android widget</string>
     <string name="tile_widget_help">A widget from another app (e.g. Musixmatch)</string>
     <string name="favorites_allow">Allow contacts</string>
+    <string name="contacts_search">Search contacts</string>
+    <string name="contacts_hint">Tap a contact to call. The star puts it on the Favorites widget.</string>
     <string name="contacts_sync">Sync</string>
     <string name="contacts_syncing">Syncing…</string>
     <string name="favorites_pick">Tap to open your contacts and star the ones you want here.</string>

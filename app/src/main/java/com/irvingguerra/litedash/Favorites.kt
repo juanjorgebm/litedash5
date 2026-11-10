@@ -55,6 +55,7 @@ import com.irvingguerra.litedash.core.ui.IconButton
 import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
+import com.irvingguerra.litedash.core.ui.TextInput
 import com.irvingguerra.litedash.core.ui.Typography
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -76,6 +77,9 @@ private class Loaded(val all: List<Contact>, val diag: String) {
 }
 
 private fun digits(number: String) = number.filter { it.isDigit() }
+
+/** En minúsculas y sin tildes, para buscar. */
+private fun plain(text: String) = java.text.Normalizer.normalize(text.lowercase(), java.text.Normalizer.Form.NFD).filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
 
 /** Los favoritos que marcas tú (la app del carro no tiene favoritos): los números, guardados en las preferencias. */
 private object FavContacts {
@@ -140,12 +144,18 @@ private fun loadContacts(context: Context): Loaded {
     return Loaded(out.sortedBy { it.name.lowercase() }, log.joinToString("\n"))
 }
 
-/** Llama al número (directo con permiso; si no, el marcador con el número puesto). */
+/**
+ * Llama al número con el manos libres de la pantalla del carro; si la pantalla no lo tiene o no acepta, con el
+ * marcador de Android (directo con permiso) y, si tampoco hay, abre el Teléfono de fábrica.
+ */
 private fun call(context: Context, number: String) {
-    val uri = "tel:${Uri.encode(number)}".toUri()
-    val direct = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-    runCatching {
-        context.startActivity(Intent(if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    CarPhonebook.dial(context, number) { ok ->
+        if (ok) return@dial
+        val uri = "tel:${Uri.encode(number)}".toUri()
+        val direct = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        runCatching {
+            context.startActivity(Intent(if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure { openDialer(context) }
     }
 }
 
@@ -253,10 +263,18 @@ fun ContactsScreen(close: () -> Unit) {
                     l.all.distinctBy { digits(it.name) + "|" + digits(it.number) }
                         .sortedWith(compareByDescending<Contact> { digits(it.number) in chosen || it.starred }.thenBy { it.name.lowercase() })
                 }
-                Label(stringResource(R.string.favorites_pick), Typography.small, c.textMuted, 2)
+                var query by remember { mutableStateOf("") }
+                TextInput(query, { query = it }, stringResource(R.string.contacts_search), Modifier.fillMaxWidth(), icon = true)
+                // Busca por nombre (sin tildes) o por número.
+                val shown = remember(rows, query) {
+                    val q = plain(query.trim())
+                    val qd = digits(query)
+                    if (q.isEmpty()) rows else rows.filter { plain(it.name).contains(q) || (qd.isNotEmpty() && digits(it.number).contains(qd)) }
+                }
+                Label(stringResource(R.string.contacts_hint), Typography.small, c.textMuted, 2, Modifier.padding(top = 6.dp))
                 androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(bottom = 16.dp)) {
-                    items(rows.size) { i ->
-                        val f = rows[i]
+                    items(shown.size) { i ->
+                        val f = shown[i]
                         val fav = f.starred || digits(f.number) in chosen
                         Row(
                             Modifier.fillMaxWidth().clickable { call(context, f.number) }.padding(vertical = 4.dp),

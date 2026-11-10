@@ -453,6 +453,8 @@
     <string name="tile_widget">Widget de Android</string>
     <string name="tile_widget_help">Un widget de otra app (por ejemplo Musixmatch)</string>
     <string name="favorites_allow">Permitir contactos</string>
+    <string name="contacts_search">Buscar contacto</string>
+    <string name="contacts_hint">Toca un contacto para llamarlo. La estrella lo pone en el widget de Favoritos.</string>
     <string name="contacts_sync">Sincronizar</string>
     <string name="contacts_syncing">Sincronizando…</string>
     <string name="favorites_pick">Toca para abrir tus contactos y marca con la estrella los que quieras aquí.</string>

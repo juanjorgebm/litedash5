@@ -34,6 +34,7 @@ object CarPhonebook {
     private const val PBAP = "com.nforetek.bt.aidl.INfCommandPbap"
     private const val CALLBACK = "com.nforetek.bt.aidl.INfCallbackPbap"
     private const val TX_HFP_ADDRESS = 6
+    private const val TX_HFP_DIAL = 16
     private const val TX_REGISTER = 2
     private const val TX_UNREGISTER = 3
     private const val TX_IS_DOWNLOADING = 5
@@ -190,6 +191,23 @@ object CarPhonebook {
                         else -> finish(app, entries, "${entries.size} contactos del celular")
                     }
                 }
+            }.start()
+        }
+    }
+
+    /**
+     * Marca [number] con el manos libres de la pantalla (`reqHfpDialCall`, código 16): la llamada sale por el celular
+     * conectado y la pantalla de llamada de fábrica aparece sola. [onResult] dice si la pantalla aceptó marcar.
+     */
+    fun dial(context: Context, number: String, onResult: (Boolean) -> Unit) {
+        val app = context.applicationContext
+        val clean = number.filter { it.isDigit() || it == '+' || it == '*' || it == '#' }
+        bind(app, HFP_ACTION) { hfp, conn ->
+            if (hfp == null || clean.isEmpty()) return@bind onResult(false)
+            Thread {
+                val ok = runCatching { transact(hfp, HFP, TX_HFP_DIAL, { it.writeString(clean) }) { it.readInt() != 0 } }.getOrDefault(false)
+                runCatching { app.unbindService(conn) }
+                main.post { onResult(ok) }
             }.start()
         }
     }
