@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.ContactsContract
+import android.provider.ContactsContract.CommonDataKinds.Phone
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -94,13 +95,12 @@ private fun loadFavorites(context: Context): Loaded = runCatching {
     if (synced.isEmpty()) return@runCatching Loaded(emptyList(), label)
     class Row(val id: Long, val name: String, val number: String, val starred: Boolean, val times: Int, val photo: String?)
     val rows = LinkedHashMap<Long, Row>()
-    val phone = ContactsContract.CommonDataKinds.Phone
     resolver.query(
-        phone.CONTENT_URI,
-        arrayOf(phone.CONTACT_ID, phone.DISPLAY_NAME, phone.NUMBER, phone.STARRED, phone.TIMES_CONTACTED, phone.PHOTO_THUMBNAIL_URI),
+        Phone.CONTENT_URI,
+        arrayOf(Phone.CONTACT_ID, Phone.DISPLAY_NAME, Phone.NUMBER, Phone.STARRED, Phone.TIMES_CONTACTED, Phone.PHOTO_THUMBNAIL_URI),
         null,
         null,
-        "${phone.IS_PRIMARY} DESC",
+        "${Phone.IS_PRIMARY} DESC",
     )?.use { c ->
         while (c.moveToNext()) {
             val id = c.getLong(0)
