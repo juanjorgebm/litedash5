@@ -109,27 +109,29 @@ object Places {
      * Lo que hay a menos de [radius] metros, lo más cerca primero: de Overpass (con dos servidores de respaldo) y, si
      * ninguno contesta, de Nominatim por categoría. Sin nada que mostrar y sin red, [Nearby.failed].
      */
-    fun around(context: Context, lat: Double, lon: Double, radius: Int = 2000): Nearby {
+    fun around(context: Context, lat: Double, lon: Double, radius: Int = 1500): Nearby {
         val key = "%.3f,%.3f".format(Locale.US, lat, lon)
         val now = System.currentTimeMillis()
         nearby[key]?.takeIf { now - it.second < 10 * 60_000L }?.let { return Nearby(it.first, false) }
-        val query = "[out:json][timeout:15];(" +
+        val query = "[out:json][timeout:10];(" +
             "nwr(around:$radius,$lat,$lon)[amenity~\"^(fuel|restaurant|fast_food|cafe|pharmacy|hospital|clinic|bank|atm|police)\$\"];" +
             "nwr(around:$radius,$lat,$lon)[shop~\"^(supermarket|convenience)\$\"];" +
-            ");out center 150;"
+            ");out center 120;"
+        // En disco por 24 h: lo ya visto sale al instante (y sirve sin red).
+        diskRead(context, key, now)?.let { nearby[key] = it to now; return Nearby(it, false) }
         val errors = ArrayList<String>()
-        var list: List<Place>? = null
-        for (server in OVERPASS) {
-            list = runCatching {
-                val text = get(context, server + "?data=" + URLEncoder.encode(query, "UTF-8"), readMs = 25_000)
-                val elements = JSONObject(text).optJSONArray("elements") ?: error("sin datos")
-                (0 until elements.length()).mapNotNull { i -> parse(elements.getJSONObject(i), lat, lon) }
-            }.onFailure { errors += "${server.substringAfter("//").substringBefore('/')}: ${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}" }.getOrNull()
-            if (list != null) break
-        }
-        if (list == null) {
-            list = runCatching { viaNominatim(context, lat, lon, radius) }
-                .onFailure { errors += "nominatim: ${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}" }.getOrNull()
+        // Nominatim contesta en un segundo; Overpass suele estar saturado: queda de respaldo, con poca espera.
+        var list: List<Place>? = runCatching { viaNominatim(context, lat, lon, radius) }
+            .onFailure { errors += "nominatim: ${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}" }.getOrNull()
+        if (list.isNullOrEmpty()) {
+            for (server in OVERPASS) {
+                val more = runCatching {
+                    val text = get(context, server + "?data=" + URLEncoder.encode(query, "UTF-8"), readMs = 12_000)
+                    val elements = JSONObject(text).optJSONArray("elements") ?: error("sin datos")
+                    (0 until elements.length()).mapNotNull { i -> parse(elements.getJSONObject(i), lat, lon) }
+                }.onFailure { errors += "${server.substringAfter("//").substringBefore('/')}: ${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}" }.getOrNull()
+                if (more != null) { list = more; break }
+            }
         }
         if (list == null) {
             lastError = errors.joinToString(" | ")
@@ -138,16 +140,20 @@ object Places {
         lastError = ""
         val sorted = list.sortedBy { it.meters }
         nearby[key] = sorted to now
+        if (sorted.isNotEmpty()) diskWrite(context, key, sorted, now)
         return Nearby(sorted, false)
     }
 
-    /** Respaldo: Nominatim sabe buscar "pharmacy", "gas station"… dentro de una caja (1 pedido por categoría, 1 por segundo). */
+    /** Nominatim sabe buscar "[amenity=fuel]"… dentro de una caja (1 pedido por categoría, 1 por segundo). */
     private fun viaNominatim(context: Context, lat: Double, lon: Double, radius: Int): List<Place> {
         val dLat = radius / 111_000.0
         val dLon = radius / (111_000.0 * Math.cos(Math.toRadians(lat)))
         val box = "%.5f,%.5f,%.5f,%.5f".format(Locale.US, lon - dLon, lat + dLat, lon + dLon, lat - dLat)
-        val terms = listOf("gas station" to PlaceKind.FUEL, "restaurant" to PlaceKind.FOOD, "pharmacy" to PlaceKind.PHARMACY, "hospital" to PlaceKind.HEALTH,
-            "bank" to PlaceKind.MONEY, "supermarket" to PlaceKind.STORE, "police" to PlaceKind.POLICE)
+        val terms = listOf(
+            "[amenity=fuel]" to PlaceKind.FUEL, "[amenity=restaurant]" to PlaceKind.FOOD, "[amenity=pharmacy]" to PlaceKind.PHARMACY,
+            "[amenity=hospital]" to PlaceKind.HEALTH, "[amenity=bank]" to PlaceKind.MONEY, "[amenity=atm]" to PlaceKind.MONEY,
+            "[shop=supermarket]" to PlaceKind.STORE, "[amenity=police]" to PlaceKind.POLICE, "[amenity=fast_food]" to PlaceKind.FOOD,
+        )
         val out = ArrayList<Place>()
         var answered = 0
         for ((term, kind) in terms) {
@@ -163,11 +169,25 @@ object Places {
                 val lo = o.optString("lon").toDoubleOrNull() ?: continue
                 val dist = FloatArray(1)
                 Location.distanceBetween(lat, lon, la, lo, dist)
-                out += Place(o.optString("name"), kind, la, lo, dist[0].toInt())
+                out += Place(o.optString("name").ifBlank { o.optString("display_name").substringBefore(',').takeIf { n -> n.isNotBlank() && n.any { ch -> ch.isLetter() } }.orEmpty() }, kind, la, lo, dist[0].toInt())
             }
         }
         if (answered == 0) error("Nominatim no contesta")
         return out
+    }
+
+    private fun diskRead(context: Context, key: String, now: Long): List<Place>? = runCatching {
+        val o = JSONObject(context.getSharedPreferences("places", Context.MODE_PRIVATE).getString(key, null) ?: return null)
+        if (now - o.getLong("t") > 24 * 3_600_000L) return null
+        val a = o.getJSONArray("p")
+        (0 until a.length()).map { i -> a.getJSONObject(i).let { Place(it.getString("n"), PlaceKind.valueOf(it.getString("k")), it.getDouble("la"), it.getDouble("lo"), it.getInt("m")) } }
+    }.getOrNull()
+
+    private fun diskWrite(context: Context, key: String, list: List<Place>, now: Long) {
+        runCatching {
+            val a = org.json.JSONArray(list.map { JSONObject().put("n", it.name).put("k", it.kind.name).put("la", it.latitude).put("lo", it.longitude).put("m", it.meters) })
+            context.getSharedPreferences("places", Context.MODE_PRIVATE).edit().putString(key, JSONObject().put("t", now).put("p", a).toString()).apply()
+        }
     }
 
     private fun parse(o: JSONObject, lat: Double, lon: Double): Place? {
