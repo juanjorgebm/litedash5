@@ -47,7 +47,7 @@ public class RecorderService extends Service implements SensorEventListener {
     static final String PREFS = "dashcam";
     static final String K_ARMED = "armed", K_START = "start_thr", K_STOP = "stop_thr",
             K_IMPACT_ON = "impact_on", K_IMPACT_THR = "impact_thr", K_CAM = "camera_id",
-            K_SPEED = "speed_kmh", K_STOP_SPEED = "stop_kmh", K_OPEN_ON_ACC = "open_on_acc";
+            K_SPEED = "speed_kmh", K_STOP_SPEED = "stop_kmh", K_MAX_INTERNAL = "max_internal_gb", K_OPEN_ON_ACC = "open_on_acc";
     static final float DEF_START = 0.10f, DEF_STOP = 0.07f, DEF_IMPACT = 3.0f;
     /** Segundos seguidos por encima/debajo del umbral para decidir "en marcha" o "detenido". */
     static final long START_MS = 3000, STOP_MS = 2000;
@@ -70,6 +70,8 @@ public class RecorderService extends Service implements SensorEventListener {
     volatile boolean hasGps, openOnAcc = true;
     volatile double lat, lon;
     volatile float speedKmh = -1, speedThr = 30, stopKmh = DEF_STOP_KMH;
+    /** Límite de la carpeta Dashcam en la memoria interna (cuando no hay USB), en GB. */
+    volatile float maxInternalGb = 2f;
     volatile long fixAt;
     private android.location.LocationManager lm;
     /** Ubicación de cada segundo de la grabación en curso (para el .srt). */
@@ -121,6 +123,7 @@ public class RecorderService extends Service implements SensorEventListener {
         cameraId = prefs.getInt(K_CAM, 0);
         speedThr = prefs.getFloat(K_SPEED, 30);
         stopKmh = prefs.getFloat(K_STOP_SPEED, DEF_STOP_KMH);
+        maxInternalGb = prefs.getFloat(K_MAX_INTERNAL, 2f);
         openOnAcc = prefs.getBoolean(K_OPEN_ON_ACC, true);
         startGps();
 
@@ -182,6 +185,15 @@ public class RecorderService extends Service implements SensorEventListener {
         speedThr = Math.max(5, Math.min(kmh, 120));
         if (stopKmh >= speedThr) stopKmh = speedThr - 1;
         prefs.edit().putFloat(K_SPEED, speedThr).putFloat(K_STOP_SPEED, stopKmh).apply();
+    }
+
+    void setMaxInternal(float gb) {
+        maxInternalGb = Math.max(0.5f, Math.min(gb, 32f));
+        prefs.edit().putFloat(K_MAX_INTERNAL, maxInternalGb).apply();
+    }
+
+    long maxInternalBytes() {
+        return (long) (maxInternalGb * (1L << 30));
     }
 
     /** Velocidad a la que deja de grabar (con GPS), siempre por debajo de la de arranque. */
@@ -398,7 +410,7 @@ public class RecorderService extends Service implements SensorEventListener {
     private void startRecording() {
         File dir = Storage.recordDir();
         folder = (Storage.isUsb(dir) ? "USB · " : "memoria interna · ") + dir.getAbsolutePath();
-        int del = Storage.freeSpace(dir, null);
+        int del = Storage.freeSpace(dir, null, maxInternalBytes());
         if (del > 0) event("Borré " + del + " video(s) viejo(s) para hacer espacio");
         currentImpact = impactPending;
         impactPending = false;

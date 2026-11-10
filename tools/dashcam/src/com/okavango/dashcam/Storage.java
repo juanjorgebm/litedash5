@@ -81,8 +81,24 @@ final class Storage {
     }
 
     /** Borra los videos más viejos de la carpeta hasta tener el espacio mínimo libre. Devuelve cuántos borró. */
-    static int freeSpace(File dir, File keep) {
-        long min = isUsb(dir) ? MIN_FREE_USB : MIN_FREE_INTERNAL;
+    /** Lo que ocupan los videos (y sus .srt) de la carpeta. */
+    static long folderSize(File dir) {
+        long t = 0;
+        File[] files = dir.listFiles();
+        if (files != null) for (File f : files) if (f.isFile()) t += f.length();
+        return t;
+    }
+
+    /** Espacio que se deja libre dentro del límite para el próximo tramo de 3 min (~135 MB). */
+    static final long NEXT_SEGMENT = 200L << 20;
+
+    /**
+     * Borra los videos más viejos hasta que haya espacio mínimo libre en el disco y, en la memoria
+     * interna, hasta que la carpeta Dashcam quede bajo maxInternal (dejando lugar al próximo tramo).
+     */
+    static int freeSpace(File dir, File keep, long maxInternal) {
+        boolean usb = isUsb(dir);
+        long min = usb ? MIN_FREE_USB : MIN_FREE_INTERNAL;
         int deleted = 0;
         File[] files = dir.listFiles();
         if (files == null) return 0;
@@ -90,10 +106,13 @@ final class Storage {
         // Los videos de golpes ("_impacto") no se borran solos.
         for (File f : files) if (f.getName().endsWith(".mp4") && !f.getName().contains("_impacto") && !f.equals(keep)) videos.add(f);
         sortNewestFirst(videos);
-        while (dir.getUsableSpace() < min && !videos.isEmpty()) {
+        long used = folderSize(dir);
+        while (!videos.isEmpty() && (dir.getUsableSpace() < min || (!usb && used + NEXT_SEGMENT > maxInternal))) {
             File oldest = videos.remove(videos.size() - 1);
+            File srt = new File(dir, oldest.getName().replace(".mp4", ".srt"));
+            used -= oldest.length() + srt.length();
             if (oldest.delete()) deleted++;
-            new File(dir, oldest.getName().replace(".mp4", ".srt")).delete();
+            srt.delete();
         }
         return deleted;
     }

@@ -56,7 +56,8 @@ public class MainActivity extends Activity {
     private TextView videosHeader;
     // Ajustes
     private Switch autoSwitch, impactSwitch, openSwitch;
-    private TextView speedVal, stopSpeedVal, gpsLine;
+    private TextView speedVal, stopSpeedVal, gpsLine, storageLine, maxVal;
+    private long lastStorage;
     private TextView impactVal, impactLive;
     private LinearLayout cameraRow;
     private int shownCamera = -1;
@@ -370,6 +371,27 @@ public class MainActivity extends Activity {
         ctip.setPadding(0, dp(8), 0, 0);
         camCard.addView(ctip);
 
+        LinearLayout stCard = card(col, "Almacenamiento");
+        storageLine = text("", 17, GREY);
+        storageLine.setPadding(0, 0, 0, dp(6));
+        stCard.addView(storageLine);
+        maxVal = text("", 22, AMBER);
+        LinearLayout mr = new LinearLayout(this);
+        mr.setGravity(Gravity.CENTER_VERTICAL);
+        mr.addView(text("Sin USB, usar como máximo (GB)", 19, Color.WHITE), new LinearLayout.LayoutParams(dp(380), -2));
+        mr.addView(round("−", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setMaxInternal(s.maxInternalGb - 0.5f); }
+        }));
+        maxVal.setGravity(Gravity.CENTER);
+        mr.addView(maxVal, new LinearLayout.LayoutParams(dp(90), -2));
+        mr.addView(round("+", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null) s.setMaxInternal(s.maxInternalGb + 0.5f); }
+        }));
+        stCard.addView(mr);
+        TextView stip = text("Con USB conectada graba ahí y usa todo el espacio (deja 2 GB libres). Sin USB graba en la memoria de la pantalla hasta este tamaño; al llegar, borra los videos más viejos (menos los de golpes).", 15, GREY);
+        stip.setPadding(0, dp(6), 0, 0);
+        stCard.addView(stip);
+
         LinearLayout updCard = card(col, "Actualización");
         LinearLayout upd = new LinearLayout(this);
         upd.setGravity(Gravity.CENTER_VERTICAL);
@@ -455,6 +477,16 @@ public class MainActivity extends Activity {
                 impactVal.setText(String.format(Locale.US, "%.1f", s.impactThr));
                 speedVal.setText(String.format(Locale.US, "%.0f", s.speedThr));
                 stopSpeedVal.setText(String.format(Locale.US, "%.0f", s.stopKmh));
+                maxVal.setText(String.format(Locale.US, "%.1f", s.maxInternalGb));
+                if (tab == 2 && now - lastStorage > 3000) {
+                    lastStorage = now;
+                    File in = Storage.internalDir();
+                    boolean usbNow = !Storage.usbRoots().isEmpty();
+                    storageLine.setText((usbNow ? "USB conectada: graba en la USB." : "Sin USB: graba en la memoria de la pantalla.")
+                            + "  Memoria de la pantalla: videos " + Storage.human(Storage.folderSize(in))
+                            + " de " + String.format(Locale.US, "%.1f GB", s.maxInternalGb)
+                            + " · libre " + Storage.human(in.getParentFile().getUsableSpace()));
+                }
                 String g = !s.hasGps ? "Esta pantalla no tiene GPS: se usa la vibración"
                         : s.gpsActive() ? String.format(Locale.US, "GPS: %.0f km/h  ·  %.5f, %.5f", s.speedKmh, s.lat, s.lon)
                         : "GPS: buscando señal… (mientras tanto se usa la vibración)";
