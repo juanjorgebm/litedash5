@@ -445,6 +445,8 @@
     <string name="tile_widget">Android widget</string>
     <string name="tile_widget_help">A widget from another app (e.g. Musixmatch)</string>
     <string name="favorites_allow">Allow contacts</string>
+    <string name="contacts_sync">Sync</string>
+    <string name="contacts_syncing">Syncing…</string>
     <string name="favorites_pick">Tap to open your contacts and star the ones you want here.</string>
     <string name="favorites_empty">Connect your phone over Bluetooth and sync its contacts (allow phonebook access on the phone). Its favorites show here.</string>
     <string name="my_okavango">My Okavango</string>
