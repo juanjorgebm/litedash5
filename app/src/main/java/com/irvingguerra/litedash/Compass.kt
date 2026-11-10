@@ -2,7 +2,10 @@ package com.irvingguerra.litedash
 
 import android.content.Context
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,7 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -68,46 +73,98 @@ fun CompassTile(d: Dependencies) {
     )
     val ink = if (moving) c.text else c.textMuted
     Card(Modifier.fillMaxSize()) {
-        BoxWithConstraints(Modifier.fillMaxSize().padding(14.dp), contentAlignment = Alignment.Center) {
-            val side = minOf(maxWidth, maxHeight)
-            Box(Modifier.size(side), contentAlignment = Alignment.Center) {
-                // El disco gira al revés del rumbo: el norte queda donde está de verdad.
-                Box(Modifier.fillMaxSize().rotate(-(heading ?: 0f)), contentAlignment = Alignment.Center) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val r = size.minDimension / 2f
-                        drawCircle(c.line, r, style = Stroke(2.dp.toPx()))
-                        for (i in 0 until 36) {
-                            val a = (i * 10 * PI / 180).toFloat()
-                            val len = if (i % 9 == 0) 14.dp.toPx() else if (i % 3 == 0) 8.dp.toPx() else 4.dp.toPx()
-                            val from = Offset(center.x + (r - len) * sin(a), center.y - (r - len) * cos(a))
-                            val to = Offset(center.x + r * sin(a), center.y - r * cos(a))
-                            drawLine(if (i == 0) c.accent else c.textMuted, from, to, strokeWidth = 2.dp.toPx())
+        BoxWithConstraints(Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+            // La brújula "acostada" y vista a unos 45°: arriba es hacia adelante, como el parabrisas. El texto va aparte, derecho.
+            val textRight = maxWidth > maxHeight * 1.5f
+            val flat = 0.62f // cuánto de alto se ve el disco inclinado
+            val diameter = if (textRight) minOf(maxWidth * 0.58f, maxHeight / flat) else minOf(maxWidth, (maxHeight - 52.dp) / flat)
+            val dial = @Composable {
+                Box(Modifier.size(diameter, diameter * flat), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.requiredSize(diameter).graphicsLayer {
+                            rotationX = 55f
+                            cameraDistance = 16f * density
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        // El plato con grosor (una sombra debajo) para que se note el relieve.
+                        Canvas(Modifier.fillMaxSize()) {
+                            val r = size.minDimension / 2f * 0.96f
+                            drawCircle(Color.Black.copy(alpha = 0.45f), r, center = Offset(center.x, center.y + 14.dp.toPx()))
+                            drawCircle(c.surfaceHigh, r)
+                            drawCircle(c.line, r, style = Stroke(3.dp.toPx()))
                         }
-                    }
-                    names.forEachIndexed { i, res ->
-                        val align = when (i) { 0 -> Alignment.TopCenter; 1 -> Alignment.CenterEnd; 2 -> Alignment.BottomCenter; else -> Alignment.CenterStart }
-                        Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = align) {
-                            Label(stringResource(res), Typography.subtitle, if (i == 0) c.accent else c.text, 1)
+                        // El anillo gira al revés del rumbo: el norte queda donde está de verdad.
+                        Box(Modifier.fillMaxSize().rotate(-(heading ?: 0f)), contentAlignment = Alignment.Center) {
+                            Canvas(Modifier.fillMaxSize()) {
+                                val r = size.minDimension / 2f * 0.96f
+                                for (i in 0 until 72) {
+                                    val a = (i * 5 * PI / 180).toFloat()
+                                    val len = if (i % 18 == 0) 20.dp.toPx() else if (i % 6 == 0) 13.dp.toPx() else 6.dp.toPx()
+                                    val from = Offset(center.x + (r - len) * sin(a), center.y - (r - len) * cos(a))
+                                    val to = Offset(center.x + r * sin(a), center.y - r * cos(a))
+                                    drawLine(if (i == 0) c.accent else c.textMuted, from, to, strokeWidth = 2.5.dp.toPx())
+                                }
+                            }
+                            names.forEachIndexed { i, res ->
+                                val align = when (i) { 0 -> Alignment.TopCenter; 1 -> Alignment.CenterEnd; 2 -> Alignment.BottomCenter; else -> Alignment.CenterStart }
+                                Box(Modifier.fillMaxSize().padding(diameter * 0.1f), contentAlignment = align) {
+                                    // Cada letra se endereza con el anillo para leerse siempre de pie.
+                                    Box(Modifier.rotate(heading ?: 0f)) {
+                                        Label(stringResource(res), Typography.title.copy(fontSize = (diameter.value * 0.13f).coerceIn(14f, 34f).sp), if (i == 0) c.accent else c.text, 1)
+                                    }
+                                }
+                            }
+                        }
+                        // Fijo: el abanico hacia adelante y la flecha del carro (adelante = arriba de la pantalla).
+                        Canvas(Modifier.fillMaxSize()) {
+                            val r = size.minDimension / 2f
+                            val fan = Path().apply {
+                                moveTo(center.x, center.y)
+                                lineTo(center.x - r * 0.28f, center.y - r * 0.9f)
+                                lineTo(center.x + r * 0.28f, center.y - r * 0.9f)
+                                close()
+                            }
+                            drawPath(fan, (if (moving) c.accent else c.textMuted).copy(alpha = 0.22f))
+                            val arrow = Path().apply {
+                                moveTo(center.x, center.y - r * 0.34f)
+                                lineTo(center.x - r * 0.12f, center.y + r * 0.12f)
+                                lineTo(center.x, center.y + r * 0.04f)
+                                lineTo(center.x + r * 0.12f, center.y + r * 0.12f)
+                                close()
+                            }
+                            drawPath(arrow, if (moving) c.accent else c.textMuted)
+                            // La marca de "hacia adelante" en el borde de arriba.
+                            val mark = Path().apply {
+                                moveTo(center.x, center.y - r * 0.99f)
+                                lineTo(center.x - r * 0.05f, center.y - r * 1.1f)
+                                lineTo(center.x + r * 0.05f, center.y - r * 1.1f)
+                                close()
+                            }
+                            drawPath(mark, c.text)
                         }
                     }
                 }
-                // Aguja fija: apunta hacia donde va el carro.
-                Canvas(Modifier.fillMaxSize()) {
-                    val p = Path().apply {
-                        moveTo(center.x, center.y - size.minDimension * 0.30f)
-                        lineTo(center.x - 9.dp.toPx(), center.y + 6.dp.toPx())
-                        lineTo(center.x + 9.dp.toPx(), center.y + 6.dp.toPx())
-                        close()
-                    }
-                    drawPath(p, if (moving) c.accent else c.textMuted)
-                }
-                Column(Modifier.align(Alignment.BottomCenter).padding(bottom = side / 5), horizontalAlignment = Alignment.CenterHorizontally) {
+            }
+            val readout = @Composable {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     val h = heading
                     if (h != null) {
-                        Label(sector(h, letters), Typography.title.copy(fontSize = if (side > 160.dp) 34.sp else 24.sp), ink, 1)
-                        Label("${h.roundToInt()}°", Typography.small, c.textMuted, 1)
+                        Label(sector(h, letters), Typography.title.copy(fontSize = 34.sp), ink, 1)
+                        Label("${h.roundToInt()}°", Typography.subtitle, c.textMuted, 1)
                     }
-                    if (side > 130.dp) Label(status, Typography.small, c.textMuted, 2)
+                    Label(status, Typography.small, c.textMuted, 2)
+                }
+            }
+            if (textRight) {
+                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { dial() }
+                    readout()
+                }
+            } else {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
+                    dial()
+                    readout()
                 }
             }
         }

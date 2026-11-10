@@ -44,12 +44,7 @@ object Places {
         val now = System.currentTimeMillis()
         addresses[key]?.takeIf { now - it.second < 30 * 60_000L && it.first != null }?.let { return it.first }
         val found = runCatching {
-            synchronized(gate) {
-                // Nominatim pide no pasar de un pedido por segundo.
-                val wait = 1_100 - (System.currentTimeMillis() - lastCall)
-                if (wait > 0) Thread.sleep(wait)
-                lastCall = System.currentTimeMillis()
-            }
+            throttle()
             val url = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&addressdetails=1" +
                 "&lat=%.5f&lon=%.5f&accept-language=%s".format(Locale.US, lat, lon, Locale.getDefault().language)
             val c = Https.open(context, url).apply {
@@ -74,32 +69,105 @@ object Places {
         return found
     }
 
-    /** Lo que hay a menos de [radius] metros, lo más cerca primero. Sin red, lo último que llegó para ese sitio. */
-    fun around(context: Context, lat: Double, lon: Double, radius: Int = 2500): List<Place> {
+    /** Lo que llegó de lugares cercanos; [failed] = no se pudo pedir (y [places] es lo último que se tenía). */
+    class Nearby(val places: List<Place>, val failed: Boolean)
+
+    /** Por qué falló la última vez (para mostrarlo chico en pantalla y poder buscar el problema). */
+    @Volatile var lastError: String = ""
+        private set
+
+    private val OVERPASS = listOf(
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter",
+    )
+
+    private fun throttle() = synchronized(gate) {
+        // Nominatim pide no pasar de un pedido por segundo.
+        val wait = 1_100 - (System.currentTimeMillis() - lastCall)
+        if (wait > 0) Thread.sleep(wait)
+        lastCall = System.currentTimeMillis()
+    }
+
+    private fun get(context: Context, url: String, readMs: Int): String {
+        val c = Https.open(context, url).apply {
+            connectTimeout = 10_000
+            readTimeout = readMs
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", USER_AGENT)
+            setRequestProperty("Accept", "application/json")
+        }
+        try {
+            if (c.responseCode != 200) error("HTTP ${c.responseCode}")
+            return c.inputStream.bufferedReader().readText()
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /**
+     * Lo que hay a menos de [radius] metros, lo más cerca primero: de Overpass (con dos servidores de respaldo) y, si
+     * ninguno contesta, de Nominatim por categoría. Sin nada que mostrar y sin red, [Nearby.failed].
+     */
+    fun around(context: Context, lat: Double, lon: Double, radius: Int = 2000): Nearby {
         val key = "%.3f,%.3f".format(Locale.US, lat, lon)
         val now = System.currentTimeMillis()
-        nearby[key]?.takeIf { now - it.second < 10 * 60_000L }?.let { return it.first }
-        val query = "[out:json][timeout:20];(" +
+        nearby[key]?.takeIf { now - it.second < 10 * 60_000L }?.let { return Nearby(it.first, false) }
+        val query = "[out:json][timeout:15];(" +
             "nwr(around:$radius,$lat,$lon)[amenity~\"^(fuel|restaurant|fast_food|cafe|pharmacy|hospital|clinic|bank|atm|police)\$\"];" +
             "nwr(around:$radius,$lat,$lon)[shop~\"^(supermarket|convenience)\$\"];" +
-            ");out center 250;"
-        val list = runCatching {
-            val c = Https.open(context, "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8")).apply {
-                connectTimeout = 10_000
-                readTimeout = 25_000
-                setRequestProperty("User-Agent", USER_AGENT)
-            }
-            try {
-                if (c.responseCode != 200) return@runCatching null
-                val elements = JSONObject(c.inputStream.bufferedReader().readText()).optJSONArray("elements") ?: return@runCatching null
+            ");out center 150;"
+        val errors = ArrayList<String>()
+        var list: List<Place>? = null
+        for (server in OVERPASS) {
+            list = runCatching {
+                val text = get(context, server + "?data=" + URLEncoder.encode(query, "UTF-8"), readMs = 25_000)
+                val elements = JSONObject(text).optJSONArray("elements") ?: error("sin datos")
                 (0 until elements.length()).mapNotNull { i -> parse(elements.getJSONObject(i), lat, lon) }
-            } finally {
-                c.disconnect()
-            }
-        }.getOrNull() ?: return nearby[key]?.first.orEmpty()
+            }.onFailure { errors += "${server.substringAfter("//").substringBefore('/')}: ${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}" }.getOrNull()
+            if (list != null) break
+        }
+        if (list == null) {
+            list = runCatching { viaNominatim(context, lat, lon, radius) }
+                .onFailure { errors += "nominatim: ${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}" }.getOrNull()
+        }
+        if (list == null) {
+            lastError = errors.joinToString(" | ")
+            return Nearby(nearby[key]?.first.orEmpty(), true)
+        }
+        lastError = ""
         val sorted = list.sortedBy { it.meters }
         nearby[key] = sorted to now
-        return sorted
+        return Nearby(sorted, false)
+    }
+
+    /** Respaldo: Nominatim sabe buscar "pharmacy", "gas station"… dentro de una caja (1 pedido por categoría, 1 por segundo). */
+    private fun viaNominatim(context: Context, lat: Double, lon: Double, radius: Int): List<Place> {
+        val dLat = radius / 111_000.0
+        val dLon = radius / (111_000.0 * Math.cos(Math.toRadians(lat)))
+        val box = "%.5f,%.5f,%.5f,%.5f".format(Locale.US, lon - dLon, lat + dLat, lon + dLon, lat - dLat)
+        val terms = listOf("gas station" to PlaceKind.FUEL, "restaurant" to PlaceKind.FOOD, "pharmacy" to PlaceKind.PHARMACY, "hospital" to PlaceKind.HEALTH,
+            "bank" to PlaceKind.MONEY, "supermarket" to PlaceKind.STORE, "police" to PlaceKind.POLICE)
+        val out = ArrayList<Place>()
+        var answered = 0
+        for ((term, kind) in terms) {
+            throttle()
+            val text = runCatching {
+                get(context, "https://nominatim.openstreetmap.org/search?format=jsonv2&bounded=1&limit=15&viewbox=$box&q=${URLEncoder.encode(term, "UTF-8")}", readMs = 12_000)
+            }.getOrNull() ?: continue
+            answered++
+            val array = runCatching { org.json.JSONArray(text) }.getOrNull() ?: continue
+            for (i in 0 until array.length()) {
+                val o = array.getJSONObject(i)
+                val la = o.optString("lat").toDoubleOrNull() ?: continue
+                val lo = o.optString("lon").toDoubleOrNull() ?: continue
+                val dist = FloatArray(1)
+                Location.distanceBetween(lat, lon, la, lo, dist)
+                out += Place(o.optString("name"), kind, la, lo, dist[0].toInt())
+            }
+        }
+        if (answered == 0) error("Nominatim no contesta")
+        return out
     }
 
     private fun parse(o: JSONObject, lat: Double, lon: Double): Place? {

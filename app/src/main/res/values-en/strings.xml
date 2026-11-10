@@ -772,7 +772,9 @@
     <string name="place_police">Police</string>
     <string name="places_all">All</string>
     <string name="places_loading">Looking for places nearby…</string>
-    <string name="places_none">No places found nearby. Check your internet connection.</string>
+    <string name="places_none">No places of this kind nearby.</string>
+    <string name="places_failed">Could not load nearby places: the map servers did not answer.</string>
+    <string name="places_retry">Retry</string>
     <string name="places_here">You are at</string>
     <string name="places_go">Go</string>
     <string name="places_unnamed">Unnamed</string>

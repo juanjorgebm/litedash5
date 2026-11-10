@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -59,7 +60,8 @@ fun MapFullScreen(d: Dependencies, data: String, app: App?, close: () -> Unit) {
     val lat = Math.round((position?.latitude ?: MyCar.LATITUDE) * 300) / 300.0
     val lon = Math.round((position?.longitude ?: MyCar.LONGITUDE) * 300) / 300.0
     val address by produceState<Address?>(null, lat, lon) { value = withContext(Dispatchers.IO) { Places.reverse(context, lat, lon) } }
-    val places by produceState<List<Place>?>(null, lat, lon) { value = withContext(Dispatchers.IO) { Places.around(context, lat, lon) } }
+    var retry by remember { mutableIntStateOf(0) }
+    val nearby by produceState<Places.Nearby?>(null, lat, lon, retry) { value = withContext(Dispatchers.IO) { Places.around(context, lat, lon) } }
     var kind by remember { mutableStateOf<PlaceKind?>(null) }
     PanelScaffold(stringResource(R.string.tile_map), close) {
         Row(Modifier.weight(1f).fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -71,9 +73,19 @@ fun MapFullScreen(d: Dependencies, data: String, app: App?, close: () -> Unit) {
                 Label(stringResource(R.string.places_here).uppercase(), Typography.label, c.textMuted, 1)
                 Label(address?.line?.ifBlank { null } ?: address?.region ?: MyCar.PLACE, Typography.title, maxLines = 2)
                 Spacer(Modifier.height(12.dp))
-                val found = places
-                if (found == null) {
+                val result = nearby
+                if (result == null) {
                     Label(stringResource(R.string.places_loading), Typography.body, c.textMuted)
+                    return@Column
+                }
+                val found = result.places
+                if (result.failed && found.isEmpty()) {
+                    // No es falta de internet de la pantalla: no contestaron los servidores de lugares; se dice por qué.
+                    Label(stringResource(R.string.places_failed), Typography.body, c.textMuted)
+                    Spacer(Modifier.height(10.dp))
+                    Button(stringResource(R.string.places_retry), { retry++ }, primary = true)
+                    Spacer(Modifier.height(10.dp))
+                    Label(Places.lastError, Typography.small, c.textMuted, 6)
                     return@Column
                 }
                 // Solo las categorías que sí tienen algo cerca.

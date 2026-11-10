@@ -793,7 +793,9 @@
     <string name="place_police">Policía</string>
     <string name="places_all">Todo</string>
     <string name="places_loading">Buscando lugares cerca…</string>
-    <string name="places_none">No encontré lugares cerca. Revisa la conexión a internet.</string>
+    <string name="places_none">No hay lugares de esta categoría cerca.</string>
+    <string name="places_failed">No pude cargar los lugares cercanos: los servidores de mapas no contestaron.</string>
+    <string name="places_retry">Reintentar</string>
     <string name="places_here">Estás en</string>
     <string name="places_go">Ir</string>
     <string name="places_unnamed">Sin nombre</string>
