@@ -155,6 +155,21 @@ final class Tracker {
         return netAt == 0 ? 0 : netTime + (SystemClock.elapsedRealtime() - netAt);
     }
 
+    static final String K_CLOCK_OFFSET = "screen_clock_offset";
+
+    long screenClockOffsetSaved() { return prefs.getLong(K_CLOCK_OFFSET, 0); }
+
+    /**
+     * Hora real aunque no haya Internet: la de Internet si ya se leyó; si no, el reloj de la pantalla
+     * corregido con el desfase que se midió la última vez (el GPS de esta pantalla trae la misma hora
+     * corrida que el reloj, así que no sirve).
+     */
+    long bestNow() {
+        long r = realNow();
+        if (r != 0) return r;
+        return System.currentTimeMillis() - prefs.getLong(K_CLOCK_OFFSET, 0);
+    }
+
     /** Cuánto va corrido el reloj de la pantalla (ms), si ya se sabe la hora real. */
     long screenClockOffset() {
         long r = realNow();
@@ -180,6 +195,7 @@ final class Tracker {
                 if (d > 1_700_000_000_000L) {      // fecha razonable (después de 2023)
                     netTime = d + (t1 - t0) / 2 + 500;  // Date viene en segundos enteros
                     netAt = t1;
+                    prefs.edit().putLong(K_CLOCK_OFFSET, System.currentTimeMillis() - realNow()).apply();
                     return;
                 }
             } catch (Throwable ignored) {
@@ -194,10 +210,7 @@ final class Tracker {
      * de la pantalla.
      */
     long fixTime(Location l) {
-        long r = realNow();
-        if (r != 0) return r;
-        long t = l.getTime();
-        return t > 1_700_000_000_000L ? t : System.currentTimeMillis();
+        return bestNow();
     }
 
     volatile String lastPoint = "";
@@ -206,8 +219,7 @@ final class Tracker {
     /** Al encender o apagar el carro se guarda un punto con la última posición conocida. */
     void onIgnition(boolean ignition) {
         if (!enabled || last == null || ignition == lastIgnition) return;
-        long r = realNow();
-        save(last, r != 0 ? r : System.currentTimeMillis(), ignition, false, 0);
+        save(last, bestNow(), ignition, false, 0);
     }
 
     private void save(Location l, long timeMs, boolean ignition, boolean moving, float kmh) {

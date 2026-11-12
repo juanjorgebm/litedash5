@@ -546,7 +546,7 @@ public class MainActivity extends Activity {
                             : (tr.status.isEmpty() ? "Esperando puntos del GPS" : tr.status)
                             + "  ·  enviados " + tr.sent + "  ·  pendientes " + tr.pending
                             + (tr.lastPoint.isEmpty() ? "" : "\nÚltimo punto: " + tr.lastPoint)
-                            + (tr.realNow() == 0 ? "\nTodavía sin hora de Internet: usa la del GPS."
+                            + (tr.realNow() == 0 ? (tr.screenClockOffsetSaved() != 0 ? "\nSin hora de Internet todavía: corrige el reloj de la pantalla con el último desfase medido." : "\nTodavía sin hora de Internet.")
                                : Math.abs(tr.screenClockOffset()) > 600_000 ? String.format(Locale.US,
                                     "\nEl reloj de la pantalla va corrido %.1f h; se usa la hora de Internet.", tr.screenClockOffset() / 3_600_000.0) : ""));
                 }
