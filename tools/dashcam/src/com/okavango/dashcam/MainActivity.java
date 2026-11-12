@@ -546,8 +546,9 @@ public class MainActivity extends Activity {
                             : (tr.status.isEmpty() ? "Esperando puntos del GPS" : tr.status)
                             + "  ·  enviados " + tr.sent + "  ·  pendientes " + tr.pending
                             + (tr.lastPoint.isEmpty() ? "" : "\nÚltimo punto: " + tr.lastPoint)
-                            + (Math.abs(tr.gpsClockOffset) > 600_000 ? String.format(Locale.US,
-                                    "\nOjo: la hora del GPS está corrida %.0f días; se usa la hora de la pantalla.", tr.gpsClockOffset / 86_400_000.0) : ""));
+                            + (tr.realNow() == 0 ? "\nTodavía sin hora de Internet: usa la del GPS."
+                               : Math.abs(tr.screenClockOffset()) > 600_000 ? String.format(Locale.US,
+                                    "\nEl reloj de la pantalla va corrido %.1f h; se usa la hora de Internet.", tr.screenClockOffset() / 3_600_000.0) : ""));
                 }
                 Photos ph = s.photos;
                 if (ph != null) {

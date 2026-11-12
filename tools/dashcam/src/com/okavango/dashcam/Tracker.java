@@ -126,7 +126,6 @@ final class Tracker {
     /** Llega con cada lectura del GPS (una por segundo); decide si vale la pena guardar el punto. */
     void onFix(Location l, boolean ignition, boolean moving) {
         last = l;
-        gpsClockOffset = l.getTime() - System.currentTimeMillis();
         if (!enabled) return;
         long now = SystemClock.elapsedRealtime();
         float kmh = l.hasSpeed() ? l.getSpeed() * 3.6f : 0;
@@ -141,23 +140,74 @@ final class Tracker {
         if (save) save(l, fixTime(l), ignition, moving, kmh);
     }
 
-    /**
-     * Hora del punto. Los GPS MediaTek viejos a veces dan una fecha corrida años (error de "semana
-     * GPS") y la plataforma descarta o esconde esos puntos; si la hora del GPS se aleja más de 10 min
-     * de la del reloj de la pantalla, se usa la de la pantalla.
+    // ------------------------------------------------------------------ hora real
+
+    /*
+     * El reloj de la pantalla no es confiable: tiene la zona horaria de China con la hora de Costa
+     * Rica puesta a mano, así que va 14 h atrás en hora universal. La hora real se toma de Internet
+     * (encabezado Date de un servidor web) y se sigue con el reloj interno que no se puede cambiar.
      */
-    static long fixTime(Location l) {
-        long now = System.currentTimeMillis(), t = l.getTime();
-        return Math.abs(t - now) > 600_000 ? now : t;
+    private volatile long netTime, netAt;      // hora real (UTC) y elapsedRealtime cuando se leyó
+    private long netTriedAt;
+
+    /** Hora real en milisegundos, o 0 si todavía no se pudo leer de Internet. */
+    long realNow() {
+        return netAt == 0 ? 0 : netTime + (SystemClock.elapsedRealtime() - netAt);
+    }
+
+    /** Cuánto va corrido el reloj de la pantalla (ms), si ya se sabe la hora real. */
+    long screenClockOffset() {
+        long r = realNow();
+        return r == 0 ? 0 : System.currentTimeMillis() - r;
+    }
+
+    private void syncClock() {
+        long now = SystemClock.elapsedRealtime();
+        if (netTriedAt != 0 && now - netTriedAt < (netAt == 0 ? 120_000 : 3_600_000)) return;
+        netTriedAt = now;
+        for (String u : new String[]{"http://" + HOST + "/", "http://www.google.com/", "http://clients3.google.com/generate_204"}) {
+            java.net.HttpURLConnection c = null;
+            try {
+                long t0 = SystemClock.elapsedRealtime();
+                c = (java.net.HttpURLConnection) new java.net.URL(u).openConnection();
+                c.setInstanceFollowRedirects(false);
+                c.setConnectTimeout(10_000);
+                c.setReadTimeout(10_000);
+                c.setRequestMethod("HEAD");
+                c.getResponseCode();
+                long d = c.getHeaderFieldDate("Date", 0);
+                long t1 = SystemClock.elapsedRealtime();
+                if (d > 1_700_000_000_000L) {      // fecha razonable (después de 2023)
+                    netTime = d + (t1 - t0) / 2 + 500;  // Date viene en segundos enteros
+                    netAt = t1;
+                    return;
+                }
+            } catch (Throwable ignored) {
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }
+    }
+
+    /**
+     * Hora del punto: la de Internet si ya se tiene; si no, la del GPS (si es razonable); si no, la
+     * de la pantalla.
+     */
+    long fixTime(Location l) {
+        long r = realNow();
+        if (r != 0) return r;
+        long t = l.getTime();
+        return t > 1_700_000_000_000L ? t : System.currentTimeMillis();
     }
 
     volatile String lastPoint = "";
-    volatile long gpsClockOffset;
+    private static final java.util.TimeZone CR = java.util.TimeZone.getTimeZone("America/Costa_Rica");
 
     /** Al encender o apagar el carro se guarda un punto con la última posición conocida. */
     void onIgnition(boolean ignition) {
         if (!enabled || last == null || ignition == lastIgnition) return;
-        save(last, System.currentTimeMillis(), ignition, false, 0);
+        long r = realNow();
+        save(last, r != 0 ? r : System.currentTimeMillis(), ignition, false, 0);
     }
 
     private void save(Location l, long timeMs, boolean ignition, boolean moving, float kmh) {
@@ -165,8 +215,10 @@ final class Tracker {
         lastIgnition = ignition;
         lastMoving = moving;
         if (l.hasBearing()) lastBearing = l.getBearing();
-        lastPoint = String.format(Locale.US, "%1$td/%1$tm %1$tH:%1$tM:%1$tS  %2$.5f, %3$.5f  %4$.0f km/h",
-                new java.util.Date(timeMs), l.getLatitude(), l.getLongitude(), kmh);
+        java.util.Calendar cal = java.util.Calendar.getInstance(CR);
+        cal.setTimeInMillis(timeMs);
+        lastPoint = String.format(Locale.US, "%1$td/%1$tm %1$tH:%1$tM:%1$tS (hora CR)  %2$.5f, %3$.5f  %4$.0f km/h",
+                cal, l.getLatitude(), l.getLongitude(), kmh);
         try {
             ContentValues v = new ContentValues();
             v.put("rec", record(l, timeMs, ignition, moving, kmh));
@@ -223,6 +275,7 @@ final class Tracker {
         boolean rejected = false;
                 while (running) {
             try {
+                syncClock();
                 if (!enabled) {
                     if (sock != null) { sock.close(); sock = null; }
                     Thread.sleep(3000);
