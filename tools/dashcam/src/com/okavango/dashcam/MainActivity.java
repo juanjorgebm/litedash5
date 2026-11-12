@@ -37,6 +37,8 @@ import java.util.Locale;
  * Colores: grafito (#171B21), pizarra (#343B45), ámbar (#FFB547).
  */
 public class MainActivity extends Activity {
+    /** Abierta sola al encender el carro: arranca y pasa a segundo plano. */
+    static final String EXTRA_MINIMIZE = "minimize";
 
     static final int AMBER = Color.rgb(0xFF, 0xB5, 0x47), BG = Color.rgb(0x17, 0x1B, 0x21),
             SLATE = Color.rgb(0x34, 0x3B, 0x45), PANEL = Color.rgb(0x22, 0x27, 0x2F),
@@ -110,6 +112,21 @@ public class MainActivity extends Activity {
         setContentView(root);
         showTab(0);
         checkUpdate(false);
+        minimizeIfAsked(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent i) {
+        super.onNewIntent(i);
+        setIntent(i);
+        minimizeIfAsked(i);
+    }
+
+    private void minimizeIfAsked(Intent i) {
+        if (i == null || !i.getBooleanExtra(EXTRA_MINIMIZE, false)) return;
+        i.removeExtra(EXTRA_MINIMIZE);
+        // Un momento para que el servicio arranque; después vuelve a la pantalla de inicio.
+        ui.postDelayed(new Runnable() { public void run() { moveTaskToBack(true); } }, 1500);
     }
 
     private void showTab(int i) {
@@ -273,7 +290,7 @@ public class MainActivity extends Activity {
         autoCard.addView(autoSwitch);
 
         openSwitch = new Switch(this);
-        openSwitch.setText("Abrir la dashcam al encender el carro   ");
+        openSwitch.setText("Arrancar la dashcam al encender el carro (se minimiza sola)   ");
         openSwitch.setTextColor(Color.WHITE);
         openSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         openSwitch.setPadding(0, dp(10), 0, 0);

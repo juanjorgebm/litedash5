@@ -395,12 +395,13 @@ public class RecorderService extends Service implements SensorEventListener {
         } catch (Throwable ignored) { }
     }
 
-    /** Al encender el carro abre la pantalla de la dashcam (si está activada esa opción). */
+    /** Al encender el carro abre la dashcam (si está activada esa opción) y la minimiza enseguida. */
     static void openAppIfWanted(Context c) {
         if (!c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(K_OPEN_ON_ACC, true)) return;
         try {
             Intent i = new Intent(c, MainActivity.class);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            i.putExtra(MainActivity.EXTRA_MINIMIZE, true);
             c.startActivity(i);
         } catch (Throwable ignored) { }
     }
