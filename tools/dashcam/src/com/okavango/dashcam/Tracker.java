@@ -126,6 +126,7 @@ final class Tracker {
     /** Llega con cada lectura del GPS (una por segundo); decide si vale la pena guardar el punto. */
     void onFix(Location l, boolean ignition, boolean moving) {
         last = l;
+        gpsClockOffset = l.getTime() - System.currentTimeMillis();
         if (!enabled) return;
         long now = SystemClock.elapsedRealtime();
         float kmh = l.hasSpeed() ? l.getSpeed() * 3.6f : 0;
@@ -137,8 +138,21 @@ final class Tracker {
             if (d > 180) d = 360 - d;
             save = d >= TURN_DEG;
         }
-        if (save) save(l, l.getTime(), ignition, moving, kmh);
+        if (save) save(l, fixTime(l), ignition, moving, kmh);
     }
+
+    /**
+     * Hora del punto. Los GPS MediaTek viejos a veces dan una fecha corrida años (error de "semana
+     * GPS") y la plataforma descarta o esconde esos puntos; si la hora del GPS se aleja más de 10 min
+     * de la del reloj de la pantalla, se usa la de la pantalla.
+     */
+    static long fixTime(Location l) {
+        long now = System.currentTimeMillis(), t = l.getTime();
+        return Math.abs(t - now) > 600_000 ? now : t;
+    }
+
+    volatile String lastPoint = "";
+    volatile long gpsClockOffset;
 
     /** Al encender o apagar el carro se guarda un punto con la última posición conocida. */
     void onIgnition(boolean ignition) {
@@ -151,6 +165,8 @@ final class Tracker {
         lastIgnition = ignition;
         lastMoving = moving;
         if (l.hasBearing()) lastBearing = l.getBearing();
+        lastPoint = String.format(Locale.US, "%1$td/%1$tm %1$tH:%1$tM:%1$tS  %2$.5f, %3$.5f  %4$.0f km/h",
+                new java.util.Date(timeMs), l.getLatitude(), l.getLongitude(), kmh);
         try {
             ContentValues v = new ContentValues();
             v.put("rec", record(l, timeMs, ignition, moving, kmh));

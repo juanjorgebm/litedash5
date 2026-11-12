@@ -544,7 +544,10 @@ public class MainActivity extends Activity {
                     trackId.setText("ID del dispositivo (IMEI):  " + tr.imei);
                     trackLine.setText(!tr.enabled ? "Apagado: no guarda ni envía la ubicación."
                             : (tr.status.isEmpty() ? "Esperando puntos del GPS" : tr.status)
-                            + "  ·  enviados " + tr.sent + "  ·  pendientes " + tr.pending);
+                            + "  ·  enviados " + tr.sent + "  ·  pendientes " + tr.pending
+                            + (tr.lastPoint.isEmpty() ? "" : "\nÚltimo punto: " + tr.lastPoint)
+                            + (Math.abs(tr.gpsClockOffset) > 600_000 ? String.format(Locale.US,
+                                    "\nOjo: la hora del GPS está corrida %.0f días; se usa la hora de la pantalla.", tr.gpsClockOffset / 86_400_000.0) : ""));
                 }
                 Photos ph = s.photos;
                 if (ph != null) {
