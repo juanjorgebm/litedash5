@@ -34,7 +34,7 @@ class TourSetupScreen(app: MainActivity) : Screen(app) {
     private var laps = Store.long("cfg_vueltas", 1).toInt().coerceIn(1, 3)
 
     init {
-        val mask = Store.long("cfg_torneo", 0b111110L) // todos menos el solitario
+        val mask = Store.long("cfg_torneo", 0b111111110L) // todos menos el solitario
         for (i in selected.indices) selected[i] = (mask shr i) and 1L == 1L
     }
 
@@ -58,14 +58,17 @@ class TourSetupScreen(app: MainActivity) : Screen(app) {
         G.text(c, "Juegos del torneo", x0, y + barH * 0.18f, barH * 0.29f, C.TEXT2, Paint.Align.LEFT); y += barH * 0.42f
         val games = GameId.values()
         val gap = pad
-        val gw = (x1 - x0 - gap * (games.size - 1)) / games.size
-        val gh = min(rowH * 1.25f, h * 0.2f)
+        val gcols = if (games.size > 6) (games.size + 1) / 2 else games.size
+        val grows = (games.size + gcols - 1) / gcols
+        val gw = (x1 - x0 - gap * (gcols - 1)) / gcols
+        val gh = min(rowH * (if (grows > 1) 0.85f else 1.25f), h * 0.2f)
         for ((i, g) in games.withIndex()) {
-            val r = RectF(x0 + i * (gw + gap), y, x0 + i * (gw + gap) + gw, y + gh)
+            val gx = x0 + (i % gcols) * (gw + gap); val gy = y + (i / gcols) * (gh + gap)
+            val r = RectF(gx, gy, gx + gw, gy + gh)
             val label = if (G.width(g.title, gh * 0.3f) > gw * 0.85f) wrap2(g.title) else g.title
-            ui.button(c, r, label, if (selected[i]) Btn.SELECTED else Btn.GHOST, gh * 0.28f) { selected[i] = !selected[i] }
+            ui.button(c, r, label, if (selected[i]) Btn.SELECTED else Btn.GHOST, gh * (if (grows > 1) 0.36f else 0.28f)) { selected[i] = !selected[i] }
         }
-        y += gh + pad * 1.4f
+        y += grows * gh + (grows - 1) * gap + pad * 1.4f
         G.text(c, "Vueltas (cada vuelta juega una vez cada juego)", x0, y + barH * 0.18f, barH * 0.29f, C.TEXT2, Paint.Align.LEFT); y += barH * 0.42f
         val segW = (x1 - x0) * 0.5f
         ui.segmented(c, RectF(x0, y, x0 + segW, y + rowH), listOf("1", "2", "3"), laps - 1) { laps = it + 1 }

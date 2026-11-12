@@ -1,6 +1,6 @@
 # Juegos para el carro
 
-App aparte (no forma parte de LiteDash) con 6 minijuegos para la pantalla táctil del carro,
+App aparte (no forma parte de LiteDash) con 9 minijuegos para la pantalla táctil del carro,
 pensada para pantallas de 8 a 10 pulgadas en horizontal con Android 5.1 (API 22) o más nuevo.
 
 - **Solitario** (robar 1 o 3; tocar una carta la mueve sola, también se puede arrastrar)
@@ -9,6 +9,9 @@ pensada para pantallas de 8 a 10 pulgadas en horizontal con Android 5.1 (API 22)
 - **Parejas** (12, 18 o 24 cartas; solo contra el reloj o por turnos)
 - **Cuatro en línea** (contra la app en 3 niveles, o entre dos)
 - **Golpea al topo** (solo, o dos a la vez con la pantalla dividida)
+- **Matemáticas** (10 operaciones con resultado de 2 cifras; dos jugadores en pantalla dividida)
+- **Trivia** (preguntas de Matemáticas, Español, Ciencias y Estudios Sociales)
+- **Ahorcado** (teclado en pantalla; con dos jugadores se turnan 3 palabras cada uno)
 
 **Torneo**: dos jugadores eligen los juegos y cuántas vueltas; la app lleva el marcador,
 anuncia al ganador y guarda el historial. Si quedan empatados se juega un desempate de Reflejos.

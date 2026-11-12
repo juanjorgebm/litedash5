@@ -18,7 +18,13 @@ enum class GameId(val title: String, val desc: String) {
     CUATRO("Cuatro en línea",
         "Deja caer fichas por turnos y alinea cuatro:\nen horizontal, en vertical o en diagonal.\nJuega contra la app o con tu acompañante."),
     TOPO("Golpea al topo",
-        "Toca a los animalitos cuando salgan de los huecos.\nEl dorado vale 3 puntos. ¡No toques al erizo!\nCon 2 jugadores cada uno tiene su lado de la pantalla.");
+        "Toca a los animalitos cuando salgan de los huecos.\nEl dorado vale 3 puntos. ¡No toques al erizo!\nCon 2 jugadores cada uno tiene su lado de la pantalla."),
+    MATE("Matemáticas",
+        "10 operaciones con resultado de 2 cifras.\nElige la respuesta correcta lo más rápido que puedas.\nCon 2 jugadores cada uno contesta en su mitad\nlas mismas operaciones. Gana quien acierte más."),
+    TRIVIA("Trivia",
+        "10 preguntas de la escuela: Matemáticas, Español,\nCiencias y Estudios Sociales.\nCon 2 jugadores cada uno contesta en su mitad\nlas mismas preguntas. Gana quien acierte más."),
+    AHORCADO("Ahorcado",
+        "Adivina la palabra eligiendo letras.\nCada letra que no está dibuja una parte del ahorcado:\ntienes 6 errores. Con 2 jugadores se turnan\n3 palabras cada uno y gana quien adivine más.");
 
     fun levels(players: Int): List<String> = when (this) {
         SOLITARIO -> listOf("Robar 1", "Robar 3")
@@ -27,14 +33,17 @@ enum class GameId(val title: String, val desc: String) {
         PAREJAS -> listOf("12 cartas", "18 cartas", "24 cartas")
         REFLEJOS -> emptyList()
         TOPO -> listOf("Tranquilo", "Normal", "Rápido")
+        MATE -> listOf("Sumas y restas", "+ − ×", "+ − × ÷")
+        TRIVIA -> listOf("Todas", "Mate", "Español", "Ciencias", "Sociales")
+        AHORCADO -> listOf("Fácil", "Normal", "Difícil")
     }
 
     fun levelLabel() = when (this) {
-        SOLITARIO -> "Modo"; PAREJAS -> "Tablero"; TOPO -> "Velocidad"; else -> "Dificultad"
+        SOLITARIO -> "Modo"; PAREJAS -> "Tablero"; TOPO -> "Velocidad"; MATE -> "Operaciones"; TRIVIA -> "Materia"; else -> "Dificultad"
     }
 
     fun defaultLevel(players: Int) = when (this) {
-        SOLITARIO -> 0
+        SOLITARIO, TRIVIA -> 0
         else -> if (levels(players).size >= 2) 1 else 0
     }
 
@@ -45,6 +54,8 @@ enum class GameId(val title: String, val desc: String) {
         PAREJAS -> ParejasScreen(app, m)
         CUATRO -> CuatroScreen(app, m)
         TOPO -> TopoScreen(app, m)
+        MATE, TRIVIA -> QuizScreen(app, m)
+        AHORCADO -> AhorcadoScreen(app, m)
     }
 }
 
@@ -99,6 +110,35 @@ object GameArt {
                     G.circle(c, x, y, cell * 0.4f, when (ch) { 'a' -> C.AMBER; 'b' -> C.BLUE; else -> C.BG })
                 }
             }
+            GameId.MATE -> {
+                val cell = s * 0.3f
+                val cols = intArrayOf(C.AMBER, C.BLUE, C.GREEN, C.RED)
+                val signs = arrayOf("+", "−", "×", "÷")
+                for (i in 0 until 4) {
+                    val x = cx + (if (i % 2 == 0) -0.55f else 0.55f) * cell; val y = cy + (if (i < 2) -0.55f else 0.55f) * cell
+                    G.rr(c, x - cell / 2, y - cell / 2, x + cell / 2, y + cell / 2, cell * 0.22f, cols[i])
+                    G.text(c, signs[i], x, y, cell * 0.8f, C.DARK, font = Fonts.black)
+                }
+            }
+            GameId.TRIVIA -> {
+                G.rr(c, cx - s * 0.38f, cy - s * 0.3f, cx + s * 0.38f, cy + s * 0.22f, s * 0.12f, C.BLUE)
+                G.path.reset()
+                G.path.moveTo(cx - s * 0.18f, cy + s * 0.2f); G.path.lineTo(cx - s * 0.26f, cy + s * 0.38f); G.path.lineTo(cx, cy + s * 0.2f); G.path.close()
+                c.drawPath(G.path, G.fill(C.BLUE))
+                G.text(c, "?", cx, cy - s * 0.04f, s * 0.5f, C.DARK, font = Fonts.black)
+            }
+            GameId.AHORCADO -> {
+                val p = G.stroke(0xFF8A6A4A.toInt(), s * 0.05f)
+                c.drawLine(cx - s * 0.35f, cy + s * 0.32f, cx + s * 0.1f, cy + s * 0.32f, p)
+                c.drawLine(cx - s * 0.22f, cy + s * 0.32f, cx - s * 0.22f, cy - s * 0.36f, p)
+                c.drawLine(cx - s * 0.22f, cy - s * 0.36f, cx + s * 0.12f, cy - s * 0.36f, p)
+                val w2 = G.stroke(C.WHITE, s * 0.04f)
+                c.drawLine(cx + s * 0.12f, cy - s * 0.36f, cx + s * 0.12f, cy - s * 0.26f, G.stroke(0xFFC9B48A.toInt(), s * 0.025f))
+                c.drawCircle(cx + s * 0.12f, cy - s * 0.18f, s * 0.08f, w2)
+                c.drawLine(cx + s * 0.12f, cy - s * 0.1f, cx + s * 0.12f, cy + s * 0.08f, w2)
+                c.drawLine(cx + s * 0.12f, cy - s * 0.04f, cx + s * 0.22f, cy + s * 0.04f, w2)
+                G.text(c, "_ A _ A", cx + s * 0.28f, cy + s * 0.32f, s * 0.13f, C.AMBER, font = Fonts.black)
+            }
             GameId.TOPO -> {
                 G.oval(c, cx, cy + s * 0.24f, s * 0.38f, s * 0.11f, C.DARK)
                 c.save(); c.clipRect(cx - s, cy - s, cx + s, cy + s * 0.24f)
@@ -133,8 +173,8 @@ class MenuScreen(app: MainActivity) : Screen(app) {
         // Tarjetas de juegos
         val games = GameId.values()
         val wide = w / h >= 2.05f
-        val cols = if (wide) 6 else 3
-        val rows = if (wide) 1 else 2
+        val cols = if (wide) (games.size + 1) / 2 else 3
+        val rows = (games.size + cols - 1) / cols
         val gx = pad * 2; val gy = top
         val gw = w - pad * 4; val gh = h - top - pad * 2
         val gap = pad * 1.2f
@@ -257,12 +297,24 @@ class RecordsScreen(app: MainActivity) : Screen(app) {
                 "${lv(g, it)}: ${t("parejas_t$it")}" + (if (Store.has("parejas_i$it")) ", ${Store.long("parejas_i$it")} intentos" else "")
             }
             GameId.TOPO -> (0..2).map { "${lv(g, it)}: " + (if (Store.has("topo_$it")) "${Store.long("topo_$it")} puntos" else "-") }
+            GameId.MATE -> (0..2).map {
+                "${lv(g, it)}: " + (if (Store.has("mate_ok$it")) "${Store.long("mate_ok$it")}/10" else "-") +
+                    (if (Store.has("mate_t$it")) ", 10/10 en ${t("mate_t$it")}" else "")
+            }
+            GameId.TRIVIA -> listOf(
+                "Partidas: ${Store.long("trivia_partidas")}",
+                "Mejor (todas): " + (if (Store.has("trivia_ok0")) "${Store.long("trivia_ok0")}/10" else "-"),
+                "Mejor por materia: " + (1..4).joinToString(" ") { if (Store.has("trivia_ok$it")) "${Store.long("trivia_ok$it")}" else "-" })
+            GameId.AHORCADO -> listOf(
+                "Palabras adivinadas: ${Store.long("ahorcado_palabras")}",
+                "Racha actual: ${Store.long("ahorcado_racha_actual")}",
+                "Mejor racha: ${Store.long("ahorcado_racha")}")
         }
     }
 
     private fun drawRecords(c: Canvas) {
         val games = GameId.values()
-        val cols = 3; val rows = 2
+        val cols = 3; val rows = (games.size + 2) / 3
         val top = barH + pad * 1.5f
         val gap = pad * 1.2f
         val cw = (w - pad * 4 - gap * (cols - 1)) / cols
@@ -271,11 +323,11 @@ class RecordsScreen(app: MainActivity) : Screen(app) {
             val r = RectF(pad * 2 + (i % cols) * (cw + gap), top + (i / cols) * (ch + gap), 0f, 0f)
             r.right = r.left + cw; r.bottom = r.top + ch
             G.rr(c, r, barH * 0.2f, C.CARD)
-            G.textFit(c, g.title, r.left + pad * 1.5f, r.top + ch * 0.17f, barH * 0.36f, cw * 0.9f, C.AMBER, Paint.Align.LEFT, Fonts.black)
+            G.textFit(c, g.title, r.left + pad * 1.5f, r.top + ch * 0.16f, min(barH * 0.34f, ch * 0.2f), cw * 0.9f, C.AMBER, Paint.Align.LEFT, Fonts.black)
             val ls = linesFor(g)
-            val lh = (ch * 0.72f) / 3.2f
+            val lh = ch * 0.22f
             for ((j, l) in ls.withIndex()) {
-                G.textFit(c, l, r.left + pad * 1.5f, r.top + ch * 0.4f + j * lh, barH * 0.27f, cw - pad * 3, C.WHITE, Paint.Align.LEFT)
+                G.textFit(c, l, r.left + pad * 1.5f, r.top + ch * 0.4f + j * lh, min(barH * 0.27f, ch * 0.17f), cw - pad * 3, C.WHITE, Paint.Align.LEFT)
             }
         }
     }
