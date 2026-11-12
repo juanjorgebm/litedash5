@@ -57,6 +57,14 @@ private fun skyColors(sky: Sky?, day: Boolean): List<Color> = if (!day) when (sk
     else -> listOf(Color(0xFF3F6A9A), Color(0xFF8FA3B8), Color(0xFFD1B98A))
 }
 
+/** El cielo en modo claro: tonos luminosos (igual de día que de noche), con azul suficiente para que resalte el auto blanco. */
+private fun lightSkyColors(sky: Sky?): List<Color> = when (sky) {
+    Sky.STORM, Sky.RAIN -> listOf(Color(0xFF8A97A6), Color(0xFFAEB8C3), Color(0xFFD0D6DC))
+    Sky.FOG, Sky.SNOW -> listOf(Color(0xFFA9B4C0), Color(0xFFC8D0D8), Color(0xFFE4E8EC))
+    Sky.CLOUDY, Sky.PARTLY -> listOf(Color(0xFF7FA6CC), Color(0xFFAFC8DF), Color(0xFFDDE6EE))
+    else -> listOf(Color(0xFF5E9FDB), Color(0xFF9CC6EC), Color(0xFFE6E4D2))
+}
+
 /**
  * El Geely Okavango (foto sin fondo) sobre un cielo que cambia con el clima de Palmares y, a la derecha,
  * la temperatura y los próximos días. Llena su pieza; un toque la agranda.
@@ -67,19 +75,23 @@ fun OkavangoScene(d: Dependencies, onClick: () -> Unit, modifier: Modifier = Mod
     val weather = d.weather.weather.takeIf { d.weather.enabled }
     val sky = weather?.let { skyOf(it.code) }
     val day = weather?.day ?: true
-    val colors = skyColors(sky, day)
+    // El fondo sigue el modo claro u oscuro de la app, no solo la hora.
+    val light = !c.dark
+    val colors = if (light) lightSkyColors(sky) else skyColors(sky, day)
+    val ground = if (light) listOf(Color(0xFFB4BCC6), Color(0xFF8E98A4)) else listOf(Color(0xFF22272E), Color(0xFF0F1216))
+    val edge = if (light) Color.Black else Color.White
     val shape = RoundedCornerShape(Radius.card)
     BoxWithConstraints(
         modifier
-            .shadow(8.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .shadow(if (light) 3.dp else 8.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
             .background(
                 Brush.verticalGradient(
                     0f to colors[0], 0.38f to colors[1], 0.66f to colors[2],
-                    0.66f to Color(0xFF22272E), 1f to Color(0xFF0F1216),
+                    0.66f to ground[0], 1f to ground[1],
                 ),
             )
-            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.05f))), shape)
+            .border(1.dp, Brush.verticalGradient(listOf(edge.copy(alpha = if (light) 0.10f else 0.22f), edge.copy(alpha = 0.05f))), shape)
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick),
     ) {
         val wide = maxWidth > 560.dp && maxHeight > 220.dp
@@ -87,22 +99,22 @@ fun OkavangoScene(d: Dependencies, onClick: () -> Unit, modifier: Modifier = Mod
         val areaWidth = maxWidth - panelWidth
         // Sol (o luna) y brillo del horizonte.
         Canvas(Modifier.fillMaxSize()) {
-            val glow = if (day && (sky == null || sky == Sky.CLEAR || sky == Sky.PARTLY)) Color(0xFFFFC46E) else Color(0xFFB8C6DD)
+            val glow = if ((day || light) && (sky == null || sky == Sky.CLEAR || sky == Sky.PARTLY)) Color(0xFFFFC46E) else Color(0xFFB8C6DD)
             drawCircle(
-                Brush.radialGradient(listOf(glow.copy(alpha = if (day) 0.5f else 0.22f), Color.Transparent), center = Offset(areaWidth.toPx() * 0.8f, size.height * 0.22f), radius = size.height * 0.5f),
+                Brush.radialGradient(listOf(glow.copy(alpha = if (day || light) 0.5f else 0.22f), Color.Transparent), center = Offset(areaWidth.toPx() * 0.8f, size.height * 0.22f), radius = size.height * 0.5f),
                 radius = size.height * 0.5f,
                 center = Offset(areaWidth.toPx() * 0.8f, size.height * 0.22f),
             )
-            drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.25f), Color.Transparent), endY = size.height * 0.35f), size = Size(size.width, size.height * 0.35f))
+            if (!light) drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.25f), Color.Transparent), endY = size.height * 0.35f), size = Size(size.width, size.height * 0.35f))
         }
         Column(Modifier.padding(start = 28.dp, top = 22.dp)) {
-            Label(d.prefs.carName ?: stringResource(R.string.my_okavango), Typography.title.copy(fontSize = 34.sp), Color.White)
+            Label(d.prefs.carName ?: stringResource(R.string.my_okavango), Typography.title.copy(fontSize = 34.sp), if (light) c.text else Color.White)
             Box(Modifier.padding(top = 8.dp).width(72.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(c.accent))
         }
         // El auto, con su sombra en el piso, centrado en el espacio que deja el clima.
         Box(Modifier.width(areaWidth).fillMaxHeight().padding(start = 12.dp, end = 12.dp, top = 52.dp, bottom = 14.dp), contentAlignment = Alignment.BottomCenter) {
             Canvas(Modifier.fillMaxWidth(0.9f).height(34.dp).align(Alignment.BottomCenter)) {
-                drawOval(Brush.radialGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)), size = size)
+                drawOval(Brush.radialGradient(listOf(Color.Black.copy(alpha = if (light) 0.4f else 0.6f), Color.Transparent)), size = size)
             }
             Image(
                 painterResource(R.drawable.okavango),
@@ -123,14 +135,16 @@ fun OkavangoScene(d: Dependencies, onClick: () -> Unit, modifier: Modifier = Mod
 private fun WeatherPanel(weather: Weather?, modifier: Modifier) {
     val c = LocalColors.current
     val shape = RoundedCornerShape(22.dp)
+    val light = !c.dark
+    val ink = if (light) c.text else Color.White
     val locale = currentLocale()
     val dayName = remember(locale) { SimpleDateFormat("EEE", locale) }
     val parse = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
     Column(
         modifier
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color(0xCC1E242D), Color(0xD10E1115))))
-            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.28f), Color.White.copy(alpha = 0.06f))), shape)
+            .background(Brush.verticalGradient(if (light) listOf(Color(0xE6FFFFFF), Color(0xD9F1F3F6)) else listOf(Color(0xCC1E242D), Color(0xD10E1115))))
+            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (light) 0.7f else 0.28f), Color.White.copy(alpha = if (light) 0.3f else 0.06f))), shape)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -142,15 +156,15 @@ private fun WeatherPanel(weather: Weather?, modifier: Modifier) {
         val sky = skyOf(weather.code)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(iconOf(sky, weather.day), c.accent, 40.dp)
-            Label("${weather.temperature}°", Typography.clock.copy(fontSize = 52.sp), Color.White, 1)
+            Label("${weather.temperature}°", Typography.clock.copy(fontSize = 52.sp), ink, 1)
         }
-        Label(stringResource(textOf(sky)), Typography.subtitle, Color.White, 2)
-        Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
+        Label(stringResource(textOf(sky)), Typography.subtitle, ink, 2)
+        Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(ink.copy(alpha = 0.12f)))
         for (day in weather.days.drop(1).take(3)) {
             val name = runCatching { dayName.format(parse.parse(day.date)!!) }.getOrDefault("")
                 .replaceFirstChar { it.uppercase() }.trimEnd('.')
             Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                Label(name, Typography.body.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), Color.White, 1, Modifier.width(52.dp))
+                Label(name, Typography.body.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), ink, 1, Modifier.width(52.dp))
                 Icon(iconOf(skyOf(day.code), true), c.accent, 22.dp)
                 Label("  ${day.max}°/${day.min}°", Typography.body, c.textMuted, 1)
             }
@@ -163,11 +177,12 @@ private fun WeatherPanel(weather: Weather?, modifier: Modifier) {
 private fun WeatherPill(weather: Weather?, modifier: Modifier) {
     val c = LocalColors.current
     val shape = RoundedCornerShape(50)
+    val light = !c.dark
     Row(
         modifier
             .clip(shape)
-            .background(Color(0xB30E1115))
-            .border(1.dp, Color.White.copy(alpha = 0.2f), shape)
+            .background(if (light) Color(0xE6FFFFFF) else Color(0xB30E1115))
+            .border(1.dp, Color.White.copy(alpha = if (light) 0.7f else 0.2f), shape)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -177,7 +192,7 @@ private fun WeatherPill(weather: Weather?, modifier: Modifier) {
         } else {
             val sky = skyOf(weather.code)
             Icon(iconOf(sky, weather.day), c.accent, 28.dp)
-            Label("${weather.temperature}°", Typography.title, Color.White, 1)
+            Label("${weather.temperature}°", Typography.title, if (light) c.text else Color.White, 1)
             Label(stringResource(textOf(sky)), Typography.small, c.textMuted, 1)
         }
     }
