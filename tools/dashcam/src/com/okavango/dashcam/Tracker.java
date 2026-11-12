@@ -31,7 +31,8 @@ import java.util.Locale;
 final class Tracker {
 
     static final String HOST = "app.ubicacr.com";
-    static final int PORT = 6232;
+    /** Puerto de los rastreadores Teltonika (ubicación). Las fotos van por Photos.PORT. */
+    static final int PORT = 6027;
     static final String K_ON = "tracker_on", K_ID = "tracker_id";
 
     /** Cada cuánto se guarda un punto en marcha / detenido, y giro que fuerza un punto extra. */
@@ -48,6 +49,8 @@ final class Tracker {
     private final SQLiteDatabase db;
     private final SharedPreferences prefs;
     private volatile boolean running = true;
+    /** Se llama cuando la plataforma pide una foto con el comando camreq. */
+    volatile Runnable onPhotoRequest;
     private final Thread sender;
 
     private Location last;          // último punto con señal
@@ -195,8 +198,7 @@ final class Tracker {
         Socket sock = null;
         DataOutputStream out = null;
         DataInputStream in = null;
-        long idleSince = 0;
-        while (running) {
+                while (running) {
             try {
                 if (!enabled) {
                     if (sock != null) { sock.close(); sock = null; }
@@ -209,13 +211,11 @@ final class Tracker {
                 try { while (c.moveToNext()) { lastId = c.getLong(0); recs.add(c.getBlob(1)); } } finally { c.close(); }
                 if (recs.isEmpty()) {
                     pending = 0;
-                    if (idleSince == 0) idleSince = SystemClock.elapsedRealtime();
-                    // Sin nada que enviar por 2 min se cierra la conexión; se vuelve a abrir con el próximo punto.
-                    if (sock != null && SystemClock.elapsedRealtime() - idleSince > 120_000) { sock.close(); sock = null; }
+                    // La conexión queda abierta para recibir comandos de la plataforma (pedir una foto).
+                    if (sock != null && in.available() >= 12) command(in, out);
                     Thread.sleep(2000);
                     continue;
                 }
-                idleSince = 0;
                 if (sock == null) {
                     status = "Conectando…";
                     Socket s = new Socket();
@@ -230,6 +230,7 @@ final class Tracker {
                     if (in.readUnsignedByte() != 1)
                         throw new java.io.IOException("el servidor no aceptó el ID " + imei + " (¿ya está registrado en la plataforma?)");
                 }
+                while (in.available() >= 12) command(in, out);
                 write(out, recs);
                 int ok = in.readInt();
                 if (ok != recs.size()) throw new java.io.IOException("el servidor confirmó " + ok + " de " + recs.size() + " puntos");
@@ -252,6 +253,34 @@ final class Tracker {
         try { if (sock != null) sock.close(); } catch (Throwable ignored) { }
     }
 
+    /**
+     * Comando de la plataforma (Codec 12). "camreq" pide una foto; a todo se le contesta con un texto.
+     */
+    private void command(DataInputStream in, DataOutputStream out) throws Exception {
+        if (in.readInt() != 0) throw new java.io.IOException("comando mal formado");
+        int size = in.readInt();
+        if (size < 8 || size > 2048) throw new java.io.IOException("comando mal formado");
+        byte[] b = new byte[size];
+        in.readFully(b);
+        in.readInt();   // CRC
+        if ((b[0] & 0xFF) != 0x0C || b[2] != 0x05) return;
+        int len = ((b[3] & 0xFF) << 24) | ((b[4] & 0xFF) << 16) | ((b[5] & 0xFF) << 8) | (b[6] & 0xFF);
+        if (len < 0 || len > size - 8) return;
+        String cmd = new String(b, 7, len, "US-ASCII").trim();
+        String answer;
+        if (cmd.toLowerCase(Locale.US).startsWith("camreq")) {
+            Runnable r = onPhotoRequest;
+            if (r != null) r.run();
+            answer = "Photo request received, preparing to send";
+        } else answer = "Command not supported: " + cmd;
+        byte[] a = answer.getBytes("US-ASCII");
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        DataOutputStream o = new DataOutputStream(body);
+        o.writeByte(0x0C); o.writeByte(1); o.writeByte(0x06);
+        o.writeInt(a.length); o.write(a); o.writeByte(1);
+        frame(out, body.toByteArray());
+    }
+
     /** Paquete Codec 8: preámbulo, largo, [codec, cantidad, registros, cantidad], CRC-16/IBM. */
     private static void write(OutputStream out, List<byte[]> recs) throws Exception {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
@@ -259,7 +288,10 @@ final class Tracker {
         body.write(recs.size());
         for (byte[] r : recs) body.write(r);
         body.write(recs.size());
-        byte[] b = body.toByteArray();
+        frame(out, body.toByteArray());
+    }
+
+    private static void frame(OutputStream out, byte[] b) throws Exception {
         int crc = 0;
         for (byte x : b) {
             crc ^= x & 0xFF;

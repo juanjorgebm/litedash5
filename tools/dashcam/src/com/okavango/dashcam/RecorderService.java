@@ -76,6 +76,10 @@ public class RecorderService extends Service implements SensorEventListener {
     private android.location.LocationManager lm;
     /** Rastreo GPS hacia la plataforma (cola local + envío). */
     Tracker tracker;
+    /** Fotos hacia la plataforma (se toman de la vista previa, sin pedir la cámara). */
+    Photos photos;
+    private volatile boolean photoAsap;
+    private long lastPhotoAt;
     /** Ubicación de cada segundo de la grabación en curso (para el .srt). */
     private final java.util.ArrayList<String> track = new java.util.ArrayList<>();
     private float slowMag = -1;
@@ -128,6 +132,8 @@ public class RecorderService extends Service implements SensorEventListener {
         maxInternalGb = prefs.getFloat(K_MAX_INTERNAL, 2f);
         openOnAcc = prefs.getBoolean(K_OPEN_ON_ACC, true);
         tracker = new Tracker(this, prefs);
+        photos = new Photos(this, prefs, tracker.imei);
+        tracker.onPhotoRequest = new Runnable() { public void run() { photoAsap = true; } };
         startGps();
 
         camThread = new HandlerThread("dashcam");
@@ -308,6 +314,7 @@ public class RecorderService extends Service implements SensorEventListener {
                 stopRecording(!accOn ? "carro apagado" : forced ? "" : !armed ? "dashcam desactivada"
                         : "carro detenido: cámara libre para el 360");
             }
+            maybePhoto(now);
             writeCsv(now);
             updateNotification();
             updateWidget();
@@ -380,6 +387,7 @@ public class RecorderService extends Service implements SensorEventListener {
     /** Golpe o frenada brusca: graba al menos 1 minuto y marca el video como "impacto" (no se borra solo). */
     private void onImpact(float j) {
         event(String.format(Locale.US, "GOLPE detectado (%.1f m/s²): grabando", j));
+        photoAsap = true;
         if (recording) currentImpact = true;
         else impactPending = true;
         long until = SystemClock.elapsedRealtime() + CLIP_MS;
@@ -413,6 +421,26 @@ public class RecorderService extends Service implements SensorEventListener {
     }
 
     // ------------------------------------------------------------------ grabación
+
+    /**
+     * Foto para la plataforma: cada tantos minutos mientras graba, al detectar un golpe o cuando la
+     * plataforma la pide. Se copia de la vista previa de la grabación en curso; nunca abre la cámara.
+     */
+    private void maybePhoto(long now) {
+        Photos ph = photos;
+        if (ph == null || !ph.enabled) { photoAsap = false; return; }
+        if (!recording || now - recordingSince < 3000 || preview == null || surface == null) return;
+        if (!photoAsap && lastPhotoAt != 0 && now - lastPhotoAt < ph.everyMin * 60000L) return;
+        photoAsap = false;
+        lastPhotoAt = now;
+        main.post(new Runnable() {
+            public void run() {
+                try {
+                    if (preview != null && recording) photos.add(preview.getBitmap(1280, 480));
+                } catch (Throwable t) { photos.status = "No se pudo tomar la foto: " + t.getMessage(); }
+            }
+        });
+    }
 
     private int openCamId;
 
@@ -727,6 +755,7 @@ public class RecorderService extends Service implements SensorEventListener {
         try { if (csv != null) csv.close(); } catch (Throwable ignored) { }
         try { wake.release(); } catch (Throwable ignored) { }
         try { if (tracker != null) tracker.close(); } catch (Throwable ignored) { }
+        try { if (photos != null) photos.close(); } catch (Throwable ignored) { }
         super.onDestroy();
     }
 

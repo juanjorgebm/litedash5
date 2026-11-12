@@ -58,7 +58,8 @@ public class MainActivity extends Activity {
     private TextView videosHeader;
     // Ajustes
     private Switch autoSwitch, impactSwitch, openSwitch, trackSwitch;
-    private TextView trackId, trackLine;
+    private TextView trackId, trackLine, photoLine, photoVal;
+    private Switch photoSwitch;
     private TextView speedVal, stopSpeedVal, gpsLine, storageLine, maxVal;
     private long lastStorage;
     private TextView impactVal, impactLive;
@@ -433,6 +434,39 @@ public class MainActivity extends Activity {
         ttip.setPadding(0, dp(6), 0, 0);
         trCard.addView(ttip);
 
+        LinearLayout phCard = card(col, "Fotos a la plataforma");
+        photoSwitch = new Switch(this);
+        photoSwitch.setText("Enviar fotos a " + Tracker.HOST + "   ");
+        photoSwitch.setTextColor(Color.WHITE);
+        photoSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        photoSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean on) {
+                RecorderService s = RecorderService.instance;
+                if (s != null && s.photos != null && !syncing) s.photos.setEnabled(on);
+            }
+        });
+        phCard.addView(photoSwitch);
+        LinearLayout pr = new LinearLayout(this);
+        pr.setGravity(Gravity.CENTER_VERTICAL);
+        pr.setPadding(0, dp(8), 0, 0);
+        pr.addView(text("Mientras graba, una foto cada (min)", 19, Color.WHITE), new LinearLayout.LayoutParams(dp(380), -2));
+        pr.addView(round("−", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null && s.photos != null) s.photos.stepInterval(-1); }
+        }));
+        photoVal = text("", 22, AMBER);
+        photoVal.setGravity(Gravity.CENTER);
+        pr.addView(photoVal, new LinearLayout.LayoutParams(dp(90), -2));
+        pr.addView(round("+", new View.OnClickListener() {
+            public void onClick(View v) { RecorderService s = RecorderService.instance; if (s != null && s.photos != null) s.photos.stepInterval(1); }
+        }));
+        phCard.addView(pr);
+        photoLine = text("", 16, GREY);
+        photoLine.setPadding(0, dp(6), 0, 0);
+        phCard.addView(photoLine);
+        TextView ptip = text("Funciona como la cámara Teltonika DualCam (puerto " + Photos.PORT + ", mismo ID). Manda una foto al empezar a grabar, cada tantos minutos, al detectar un golpe y cuando la plataforma la pide. Las fotos salen de la grabación en curso: nunca se abre la cámara solo para una foto.", 15, GREY);
+        ptip.setPadding(0, dp(6), 0, 0);
+        phCard.addView(ptip);
+
         LinearLayout updCard = card(col, "Actualización");
         LinearLayout upd = new LinearLayout(this);
         upd.setGravity(Gravity.CENTER_VERTICAL);
@@ -512,6 +546,13 @@ public class MainActivity extends Activity {
                             : (tr.status.isEmpty() ? "Esperando puntos del GPS" : tr.status)
                             + "  ·  enviados " + tr.sent + "  ·  pendientes " + tr.pending);
                 }
+                Photos ph = s.photos;
+                if (ph != null) {
+                    photoVal.setText(String.valueOf(ph.everyMin));
+                    photoLine.setText(!ph.enabled ? "Apagado: no toma ni envía fotos."
+                            : (ph.status.isEmpty() ? "Esperando la primera foto" : ph.status)
+                            + "  ·  enviadas " + ph.sent + "  ·  pendientes " + ph.pending);
+                }
                 boolean active = s.recording || s.forcedUntil > now;
                 recButton.setText(active ? "DETENER" : "GRABAR");
                 setRecIcon(active);
@@ -547,6 +588,7 @@ public class MainActivity extends Activity {
                 impactSwitch.setChecked(s.impactOn);
                 openSwitch.setChecked(s.openOnAcc);
                 if (s.tracker != null) trackSwitch.setChecked(s.tracker.enabled);
+                if (s.photos != null) photoSwitch.setChecked(s.photos.enabled);
                 syncing = false;
                 File cur = s.currentFile;
                 File dir = cur != null ? cur.getParentFile() : Storage.recordDir();
