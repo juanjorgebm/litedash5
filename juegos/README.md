@@ -12,6 +12,7 @@ pensada para pantallas de 8 a 10 pulgadas en horizontal con Android 5.1 (API 22)
 - **Matemáticas** (10 operaciones con resultado de 2 cifras; dos jugadores en pantalla dividida)
 - **Trivia** (preguntas de Matemáticas, Español, Ciencias y Estudios Sociales)
 - **Ahorcado** (teclado en pantalla; con dos jugadores se turnan 3 palabras cada uno)
+- **Corre Coco** (correr y saltar con un personaje propio; 3 mundos: Pradera, Playa y Volcán; con dos jugadores corren el mismo camino por turnos)
 
 **Torneo**: dos jugadores eligen los juegos y cuántas vueltas; la app lleva el marcador,
 anuncia al ganador y guarda el historial. Si quedan empatados se juega un desempate de Reflejos.

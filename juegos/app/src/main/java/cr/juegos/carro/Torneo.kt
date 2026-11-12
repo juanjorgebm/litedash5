@@ -34,7 +34,7 @@ class TourSetupScreen(app: MainActivity) : Screen(app) {
     private var laps = Store.long("cfg_vueltas", 1).toInt().coerceIn(1, 3)
 
     init {
-        val mask = Store.long("cfg_torneo", 0b111111110L) // todos menos el solitario
+        val mask = Store.long("cfg_torneo", 0b1111111110L) // todos menos el solitario
         for (i in selected.indices) selected[i] = (mask shr i) and 1L == 1L
     }
 

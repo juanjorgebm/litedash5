@@ -474,7 +474,8 @@ object Store {
 object Sound {
     const val TAP = 0; const val POP = 1; const val GOOD = 2; const val BAD = 3; const val WIN = 4
     const val TICK = 5; const val GO = 6; const val BONK = 7; const val FLIP = 8; const val DROP = 9
-    private const val COUNT = 10
+    const val JUMP = 10; const val COIN = 11
+    private const val COUNT = 12
     private const val SR = 22050
     private var pool: SoundPool? = null
     private val ids = IntArray(COUNT)
@@ -540,6 +541,8 @@ object Sound {
         GO -> sweep(1320.0, 1320.0, 0.28, 0.5)
         BONK -> sweep(320.0, 90.0, 0.13, 0.8, noise = 0.25)
         FLIP -> sweep(900.0, 1700.0, 0.05, 0.3, noise = 0.3)
+        JUMP -> sweep(320.0, 760.0, 0.12, 0.4, square = true)
+        COIN -> cat(sweep(988.0, 988.0, 0.05, 0.35, square = true), sweep(1319.0, 1319.0, 0.14, 0.35, square = true))
         else -> sweep(760.0, 240.0, 0.1, 0.55)
     }
 

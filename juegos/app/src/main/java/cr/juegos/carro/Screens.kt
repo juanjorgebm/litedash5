@@ -24,7 +24,9 @@ enum class GameId(val title: String, val desc: String) {
     TRIVIA("Trivia",
         "10 preguntas de la escuela: Matemáticas, Español,\nCiencias y Estudios Sociales.\nCon 2 jugadores cada uno contesta en su mitad\nlas mismas preguntas. Gana quien acierte más."),
     AHORCADO("Ahorcado",
-        "Adivina la palabra eligiendo letras.\nCada letra que no está dibuja una parte del ahorcado:\ntienes 6 errores. Con 2 jugadores se turnan\n3 palabras cada uno y gana quien adivine más.");
+        "Adivina la palabra eligiendo letras.\nCada letra que no está dibuja una parte del ahorcado:\ntienes 6 errores. Con 2 jugadores se turnan\n3 palabras cada uno y gana quien adivine más."),
+    CORRE("Corre Coco",
+        "Coco corre solo: toca la pantalla para saltar.\nMantén el dedo para saltar más alto y toca otra vez\nen el aire para un doble salto. Junta monedas,\nsalta sobre los bichos y llega a la bandera.");
 
     fun levels(players: Int): List<String> = when (this) {
         SOLITARIO -> listOf("Robar 1", "Robar 3")
@@ -36,14 +38,15 @@ enum class GameId(val title: String, val desc: String) {
         MATE -> listOf("Sumas y restas", "+ − ×", "+ − × ÷")
         TRIVIA -> listOf("Todas", "Mate", "Español", "Ciencias", "Sociales")
         AHORCADO -> listOf("Fácil", "Normal", "Difícil")
+        CORRE -> listOf("Pradera", "Playa", "Volcán")
     }
 
     fun levelLabel() = when (this) {
-        SOLITARIO -> "Modo"; PAREJAS -> "Tablero"; TOPO -> "Velocidad"; MATE -> "Operaciones"; TRIVIA -> "Materia"; else -> "Dificultad"
+        SOLITARIO -> "Modo"; PAREJAS -> "Tablero"; TOPO -> "Velocidad"; MATE -> "Operaciones"; TRIVIA -> "Materia"; CORRE -> "Mundo"; else -> "Dificultad"
     }
 
     fun defaultLevel(players: Int) = when (this) {
-        SOLITARIO, TRIVIA -> 0
+        SOLITARIO, TRIVIA, CORRE -> 0
         else -> if (levels(players).size >= 2) 1 else 0
     }
 
@@ -56,6 +59,7 @@ enum class GameId(val title: String, val desc: String) {
         TOPO -> TopoScreen(app, m)
         MATE, TRIVIA -> QuizScreen(app, m)
         AHORCADO -> AhorcadoScreen(app, m)
+        CORRE -> CorreScreen(app, m)
     }
 }
 
@@ -139,6 +143,15 @@ object GameArt {
                 c.drawLine(cx + s * 0.12f, cy - s * 0.04f, cx + s * 0.22f, cy + s * 0.04f, w2)
                 G.text(c, "_ A _ A", cx + s * 0.28f, cy + s * 0.32f, s * 0.13f, C.AMBER, font = Fonts.black)
             }
+            GameId.CORRE -> {
+                val gy = cy + s * 0.32f
+                G.rr(c, cx - s * 0.48f, gy, cx + s * 0.48f, gy + s * 0.14f, s * 0.04f, 0xFF96612F.toInt())
+                G.rr(c, cx - s * 0.48f, gy, cx + s * 0.48f, gy + s * 0.05f, s * 0.025f, 0xFF5BCB4E.toInt())
+                val k = (sin(t / 300.0) * 0.5 + 0.5).toFloat()
+                Coco.draw(c, cx - s * 0.12f, gy - s * 0.04f - k * s * 0.12f, s * 0.42f, t / 90f, k > 0.15f, 0, t)
+                Coco.coin(c, cx + s * 0.28f, cy - s * 0.22f, s * 0.09f, t)
+                Coco.coin(c, cx + s * 0.06f, cy - s * 0.36f, s * 0.09f, t, 0.8f)
+            }
             GameId.TOPO -> {
                 G.oval(c, cx, cy + s * 0.24f, s * 0.38f, s * 0.11f, C.DARK)
                 c.save(); c.clipRect(cx - s, cy - s, cx + s, cy + s * 0.24f)
@@ -173,7 +186,7 @@ class MenuScreen(app: MainActivity) : Screen(app) {
         // Tarjetas de juegos
         val games = GameId.values()
         val wide = w / h >= 2.05f
-        val cols = if (wide) (games.size + 1) / 2 else 3
+        val cols = if (wide) (games.size + 1) / 2 else if (games.size > 9) 4 else 3
         val rows = (games.size + cols - 1) / cols
         val gx = pad * 2; val gy = top
         val gw = w - pad * 4; val gh = h - top - pad * 2
@@ -309,12 +322,16 @@ class RecordsScreen(app: MainActivity) : Screen(app) {
                 "Palabras adivinadas: ${Store.long("ahorcado_palabras")}",
                 "Racha actual: ${Store.long("ahorcado_racha_actual")}",
                 "Mejor racha: ${Store.long("ahorcado_racha")}")
+            GameId.CORRE -> (0..2).map {
+                "${lv(g, it)}: " + (if (Store.has("corre_m$it")) "${Store.long("corre_m$it")} monedas" else "-") +
+                    (if (Store.has("corre_t$it")) ", ${t("corre_t$it")}" else "")
+            }
         }
     }
 
     private fun drawRecords(c: Canvas) {
         val games = GameId.values()
-        val cols = 3; val rows = (games.size + 2) / 3
+        val cols = if (games.size > 9) 4 else 3; val rows = (games.size + cols - 1) / cols
         val top = barH + pad * 1.5f
         val gap = pad * 1.2f
         val cw = (w - pad * 4 - gap * (cols - 1)) / cols
