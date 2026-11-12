@@ -7,19 +7,31 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.Context
 import android.content.Intent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -29,8 +41,10 @@ import com.irvingguerra.litedash.core.ui.Card
 import com.irvingguerra.litedash.core.ui.Icon
 import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
+import com.irvingguerra.litedash.core.ui.Radius
 import com.irvingguerra.litedash.core.ui.Typography
 import com.irvingguerra.litedash.feature.dashboard.TileTypes
+import kotlinx.coroutines.delay
 
 /*
  * Widgets de otras apps de Android (Musixmatch, el clima de fábrica…): LiteDash hace de "host".
@@ -58,6 +72,16 @@ private object WidgetHost {
     }
 }
 
+/** "1 nuevo", "3 mensajes nuevos", "2 sin leer", "5 unread"…: lo que escriben los widgets cuando hay algo pendiente. */
+private val UNREAD = Regex("""(?i)(?<![\d:.,])([1-9]\d{0,3})\s+(?:\p{L}+\s+)?(?:nuev[oa]s?|sin\s+leer|no\s+le[ií]d[oa]s?|new|unread)(?!\p{L})""")
+
+/** Cuántos pendientes anuncia el widget en sus textos (0 si ninguno). LiteDash no ve sus datos, solo lo que pinta. */
+private fun unreadIn(view: View?): Int = when (view) {
+    is TextView -> if (view.visibility == View.VISIBLE) UNREAD.find(view.text ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 0 else 0
+    is ViewGroup -> if (view.visibility != View.VISIBLE) 0 else (0 until view.childCount).sumOf { unreadIn(view.getChildAt(it)) }
+    else -> 0
+}
+
 /** Un widget de Android dentro de una tarjeta; sin él (se desinstaló la app o se borró) avisa. */
 @Composable
 fun WidgetTile(data: String) {
@@ -76,16 +100,35 @@ fun WidgetTile(data: String) {
             }
             return@Card
         }
-        BoxWithConstraints(Modifier.fillMaxSize().padding(8.dp)) {
+        // El widget lo pinta la otra app: se leen sus textos cada rato y, si anuncia algo nuevo, se marca en rojo.
+        var hosted by remember { mutableStateOf<AppWidgetHostView?>(null) }
+        var unread by remember { mutableIntStateOf(0) }
+        LaunchedEffect(hosted) {
+            while (true) {
+                unread = runCatching { unreadIn(hosted) }.getOrDefault(0)
+                delay(2_000)
+            }
+        }
+        val alert = Color(0xFFFF3B30)
+        BoxWithConstraints(
+            Modifier.fillMaxSize()
+                .then(if (unread > 0) Modifier.border(3.dp, alert, RoundedCornerShape(Radius.card)) else Modifier)
+                .padding(8.dp),
+        ) {
             val widthDp = maxWidth.value.toInt()
             val heightDp = maxHeight.value.toInt()
             AndroidView(
                 factory = { ctx ->
-                    WidgetHost.get(ctx).createView(ctx, id, info).apply { setAppWidget(id, info) } as AppWidgetHostView
+                    (WidgetHost.get(ctx).createView(ctx, id, info).apply { setAppWidget(id, info) } as AppWidgetHostView).also { hosted = it }
                 },
                 update = { view -> runCatching { view.updateAppWidgetSize(null, widthDp, heightDp, widthDp, heightDp) } },
                 modifier = Modifier.fillMaxSize(),
             )
+            if (unread > 0) Box(
+                Modifier.align(Alignment.TopEnd).padding(4.dp).defaultMinSize(34.dp, 34.dp).background(alert, CircleShape)
+                    .border(2.dp, Color.White, CircleShape).padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) { Label(if (unread > 99) "99+" else unread.toString(), Typography.body, Color.White, 1) }
         }
     }
 }
