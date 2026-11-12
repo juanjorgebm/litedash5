@@ -29,6 +29,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -56,6 +58,18 @@ private fun skyColors(sky: Sky?, day: Boolean): List<Color> = if (!day) when (sk
     Sky.CLOUDY, Sky.PARTLY -> listOf(Color(0xFF56606E), Color(0xFF7B8592), Color(0xFF9A9A98))
     else -> listOf(Color(0xFF3F6A9A), Color(0xFF8FA3B8), Color(0xFFD1B98A))
 }
+
+/** Alfa = 2.5 × alfa − 300: lo opaco (el auto) queda igual y lo de alfa ≤ 120 (la franja de sombra de la foto) desaparece. */
+private val SHADOWLESS = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            1f, 0f, 0f, 0f, 0f,
+            0f, 1f, 0f, 0f, 0f,
+            0f, 0f, 1f, 0f, 0f,
+            0f, 0f, 0f, 2.5f, -300f,
+        ),
+    ),
+)
 
 /** El cielo en modo claro: tonos luminosos (igual de día que de noche), con azul suficiente para que resalte el auto blanco. */
 private fun lightSkyColors(sky: Sky?): List<Color> = when (sky) {
@@ -122,6 +136,9 @@ fun OkavangoScene(d: Dependencies, onClick: () -> Unit, modifier: Modifier = Mod
                 modifier = Modifier.fillMaxSize().padding(bottom = 10.dp),
                 contentScale = ContentScale.Fit,
                 alignment = Alignment.BottomCenter,
+                // La foto trae abajo una franja de sombra negra semitransparente (alfa ≤ 108) de borde recto: sobre el
+                // piso claro se ve como un rectángulo gris. En claro se borra; la sombra la pone el óvalo de arriba.
+                colorFilter = if (light) SHADOWLESS else null,
             )
         }
         // Pieza angosta: sin panel, pero el clima se ve igual, en una píldora arriba a la derecha (sin tocar nada).
