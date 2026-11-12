@@ -74,6 +74,8 @@ public class RecorderService extends Service implements SensorEventListener {
     volatile float maxInternalGb = 2f;
     volatile long fixAt;
     private android.location.LocationManager lm;
+    /** Rastreo GPS hacia la plataforma (cola local + envío). */
+    Tracker tracker;
     /** Ubicación de cada segundo de la grabación en curso (para el .srt). */
     private final java.util.ArrayList<String> track = new java.util.ArrayList<>();
     private float slowMag = -1;
@@ -125,6 +127,7 @@ public class RecorderService extends Service implements SensorEventListener {
         stopKmh = prefs.getFloat(K_STOP_SPEED, DEF_STOP_KMH);
         maxInternalGb = prefs.getFloat(K_MAX_INTERNAL, 2f);
         openOnAcc = prefs.getBoolean(K_OPEN_ON_ACC, true);
+        tracker = new Tracker(this, prefs);
         startGps();
 
         camThread = new HandlerThread("dashcam");
@@ -230,6 +233,7 @@ public class RecorderService extends Service implements SensorEventListener {
             lon = l.getLongitude();
             speedKmh = l.hasSpeed() ? l.getSpeed() * 3.6f : -1;
             fixAt = SystemClock.elapsedRealtime();
+            if (tracker != null) tracker.onFix(l, accOn, moving);
         }
         public void onStatusChanged(String p, int st, Bundle b) { }
         public void onProviderEnabled(String p) { }
@@ -390,6 +394,7 @@ public class RecorderService extends Service implements SensorEventListener {
             if (on != accOn) {
                 event(on ? "Carro encendido" : "Carro apagado");
                 if (on) openAppIfWanted(this);
+                if (tracker != null) tracker.onIgnition(on);
             }
             accOn = on;
         } catch (Throwable ignored) { }
@@ -696,6 +701,7 @@ public class RecorderService extends Service implements SensorEventListener {
         try { if (preview != null) wm.removeView(preview); } catch (Throwable ignored) { }
         try { if (csv != null) csv.close(); } catch (Throwable ignored) { }
         try { wake.release(); } catch (Throwable ignored) { }
+        try { if (tracker != null) tracker.close(); } catch (Throwable ignored) { }
         super.onDestroy();
     }
 

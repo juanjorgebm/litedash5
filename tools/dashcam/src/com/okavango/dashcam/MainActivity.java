@@ -57,7 +57,8 @@ public class MainActivity extends Activity {
     private ArrayAdapter<File> adapter;
     private TextView videosHeader;
     // Ajustes
-    private Switch autoSwitch, impactSwitch, openSwitch;
+    private Switch autoSwitch, impactSwitch, openSwitch, trackSwitch;
+    private TextView trackId, trackLine;
     private TextView speedVal, stopSpeedVal, gpsLine, storageLine, maxVal;
     private long lastStorage;
     private TextView impactVal, impactLive;
@@ -409,6 +410,29 @@ public class MainActivity extends Activity {
         stip.setPadding(0, dp(6), 0, 0);
         stCard.addView(stip);
 
+        LinearLayout trCard = card(col, "Rastreo GPS");
+        trackSwitch = new Switch(this);
+        trackSwitch.setText("Enviar la ubicación a " + Tracker.HOST + "   ");
+        trackSwitch.setTextColor(Color.WHITE);
+        trackSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        trackSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean on) {
+                RecorderService s = RecorderService.instance;
+                if (s != null && s.tracker != null && !syncing) s.tracker.setEnabled(on);
+            }
+        });
+        trCard.addView(trackSwitch);
+        trackId = text("", 22, AMBER);
+        trackId.setPadding(0, dp(10), 0, 0);
+        trCard.addView(trackId);
+        trackLine = text("", 16, GREY);
+        trackLine.setPadding(0, dp(6), 0, 0);
+        trCard.addView(trackLine);
+        TextView ttip = text("Se conecta como un rastreador Teltonika a " + Tracker.HOST + ", puerto " + Tracker.PORT
+                + ". El servidor y el ID son fijos. Registrá ese ID (IMEI) en la plataforma. Sin Internet los puntos se guardan y se envían después.", 15, GREY);
+        ttip.setPadding(0, dp(6), 0, 0);
+        trCard.addView(ttip);
+
         LinearLayout updCard = card(col, "Actualización");
         LinearLayout upd = new LinearLayout(this);
         upd.setGravity(Gravity.CENTER_VERTICAL);
@@ -481,6 +505,13 @@ public class MainActivity extends Activity {
                             : s.moving ? "En marcha · preparando cámara…"
                             : "Lista · carro detenido");
                 }
+                Tracker tr = s.tracker;
+                if (tr != null) {
+                    trackId.setText("ID del dispositivo (IMEI):  " + tr.imei);
+                    trackLine.setText(!tr.enabled ? "Apagado: no guarda ni envía la ubicación."
+                            : (tr.status.isEmpty() ? "Esperando puntos del GPS" : tr.status)
+                            + "  ·  enviados " + tr.sent + "  ·  pendientes " + tr.pending);
+                }
                 boolean active = s.recording || s.forcedUntil > now;
                 recButton.setText(active ? "DETENER" : "GRABAR");
                 setRecIcon(active);
@@ -515,6 +546,7 @@ public class MainActivity extends Activity {
                 autoSwitch.setChecked(s.armed);
                 impactSwitch.setChecked(s.impactOn);
                 openSwitch.setChecked(s.openOnAcc);
+                if (s.tracker != null) trackSwitch.setChecked(s.tracker.enabled);
                 syncing = false;
                 File cur = s.currentFile;
                 File dir = cur != null ? cur.getParentFile() : Storage.recordDir();
