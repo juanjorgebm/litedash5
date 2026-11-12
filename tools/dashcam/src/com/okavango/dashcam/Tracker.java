@@ -31,8 +31,13 @@ import java.util.Locale;
 final class Tracker {
 
     static final String HOST = "app.ubicacr.com";
-    /** Puerto de los rastreadores Teltonika (ubicación). Las fotos van por Photos.PORT. */
-    static final int PORT = 6027;
+    /**
+     * Puertos donde se prueba enviar la ubicación, en orden. Se recuerda el que el servidor aceptó;
+     * si uno falla se prueba el otro.
+     */
+    static final int[] PORTS = {6232, 6027};
+    static final String K_PORT = "tracker_port";
+    volatile int port;
     static final String K_ON = "tracker_on", K_ID = "tracker_id";
 
     /** Cada cuánto se guarda un punto en marcha / detenido, y giro que fuerza un punto extra. */
@@ -62,6 +67,7 @@ final class Tracker {
         this.prefs = prefs;
         imei = deviceId(c, prefs);
         enabled = prefs.getBoolean(K_ON, true);
+        port = prefs.getInt(K_PORT, PORTS[0]);
         db = new SQLiteOpenHelper(c, "tracker.db", null, 1) {
             @Override public void onCreate(SQLiteDatabase d) {
                 d.execSQL("CREATE TABLE q (id INTEGER PRIMARY KEY AUTOINCREMENT, rec BLOB NOT NULL)");
@@ -198,6 +204,7 @@ final class Tracker {
         Socket sock = null;
         DataOutputStream out = null;
         DataInputStream in = null;
+        boolean rejected = false;
                 while (running) {
             try {
                 if (!enabled) {
@@ -219,7 +226,7 @@ final class Tracker {
                 if (sock == null) {
                     status = "Conectando…";
                     Socket s = new Socket();
-                    s.connect(new InetSocketAddress(HOST, PORT), 15_000);
+                    s.connect(new InetSocketAddress(HOST, port), 15_000);
                     s.setSoTimeout(20_000);
                     sock = s;
                     out = new DataOutputStream(s.getOutputStream());
@@ -227,8 +234,17 @@ final class Tracker {
                     out.writeShort(imei.length());
                     out.write(imei.getBytes("US-ASCII"));
                     out.flush();
-                    if (in.readUnsignedByte() != 1)
-                        throw new java.io.IOException("el servidor no aceptó el ID " + imei + " (¿ya está registrado en la plataforma?)");
+                    int ack;
+                    try { ack = in.readUnsignedByte(); } catch (java.net.SocketTimeoutException e) {
+                        throw new java.io.IOException("conectó pero el servidor no contestó al ID");
+                    } catch (java.io.EOFException e) {
+                        throw new java.io.IOException("conectó pero el servidor cerró la conexión");
+                    }
+                    if (ack != 1) {
+                        rejected = true;
+                        throw new java.io.IOException("el servidor no aceptó el ID: falta registrarlo en la plataforma");
+                    }
+                    if (prefs.getInt(K_PORT, 0) != port) prefs.edit().putInt(K_PORT, port).apply();
                 }
                 while (in.available() >= 12) command(in, out);
                 write(out, recs);
@@ -237,17 +253,27 @@ final class Tracker {
                 db.delete("q", "id <= ?", new String[]{String.valueOf(lastId)});
                 sent += ok;
                 pending = count();
-                status = "Conectado";
+                status = "Conectado al puerto " + port;
             } catch (InterruptedException e) {
                 break;
             } catch (Throwable t) {
                 try { if (sock != null) sock.close(); } catch (Throwable ignored) { }
                 sock = null;
-                String m = t instanceof java.net.UnknownHostException || t instanceof java.net.ConnectException
-                        || t instanceof java.net.SocketTimeoutException || t instanceof java.net.NoRouteToHostException
-                        ? "Sin conexión con el servidor" : "Error: " + t.getMessage();
-                status = m + " · se reintenta en 30 s";
-                try { Thread.sleep(30_000); } catch (InterruptedException e) { break; }
+                String m = t instanceof java.net.UnknownHostException ? "sin Internet (no se encontró el servidor)"
+                        : t instanceof java.net.ConnectException ? "el servidor rechazó la conexión"
+                        : t instanceof java.net.SocketTimeoutException ? "el servidor no respondió a tiempo"
+                        : t instanceof java.net.NoRouteToHostException ? "sin Internet"
+                        : String.valueOf(t.getMessage());
+                int failed = port;
+                // Si el servidor contestó "ID no aceptado" ese es el puerto correcto; si no, se prueba el otro.
+                if (!rejected && !(t instanceof java.net.UnknownHostException)) {
+                    int i = 0;
+                    for (int k = 0; k < PORTS.length; k++) if (PORTS[k] == port) i = k;
+                    port = PORTS[(i + 1) % PORTS.length];
+                }
+                rejected = false;
+                status = "Puerto " + failed + ": " + m + " · en 15 s prueba el " + port;
+                try { Thread.sleep(15_000); } catch (InterruptedException e) { break; }
             }
         }
         try { if (sock != null) sock.close(); } catch (Throwable ignored) { }

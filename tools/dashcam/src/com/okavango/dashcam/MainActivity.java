@@ -429,8 +429,8 @@ public class MainActivity extends Activity {
         trackLine = text("", 16, GREY);
         trackLine.setPadding(0, dp(6), 0, 0);
         trCard.addView(trackLine);
-        TextView ttip = text("Se conecta como un rastreador Teltonika a " + Tracker.HOST + ", puerto " + Tracker.PORT
-                + ". El servidor y el ID son fijos. Registrá ese ID (IMEI) en la plataforma. Sin Internet los puntos se guardan y se envían después.", 15, GREY);
+        TextView ttip = text("Se conecta como un rastreador Teltonika a " + Tracker.HOST + " (prueba los puertos " + Tracker.PORTS[0] + " y " + Tracker.PORTS[1]
+                + " y se queda con el que funcione). El servidor y el ID son fijos. Registrá ese ID (IMEI) en la plataforma. Sin Internet los puntos se guardan y se envían después.", 15, GREY);
         ttip.setPadding(0, dp(6), 0, 0);
         trCard.addView(ttip);
 
