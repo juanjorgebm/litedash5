@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Tema" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/fondo</item>
+        <item name="android:colorPrimary">@color/fondo</item>
+        <item name="android:colorPrimaryDark">@color/fondo</item>
+        <item name="android:colorAccent">@color/ambar</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+    <color name="fondo">#171B21</color>
+    <color name="ambar">#FFB547</color>
+</resources>
