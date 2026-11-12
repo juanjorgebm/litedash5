@@ -21,5 +21,6 @@ La fuente Nunito (licencia OFL) va incluida porque la negrita del sistema del ca
 GitHub Actions (`.github/workflows/juegos.yml`) compila el APK en cada cambio dentro de `juegos/`
 y lo publica en la release `juegos-carro`. En local: `cd juegos && ./gradlew assembleRelease`.
 
-El APK se firma con `app/juegos.keystore` (incluida a propósito) para que cada versión nueva
-se instale encima de la anterior sin borrar récords.
+Firma: si el repo tiene el secreto `JUEGOS_KEYSTORE_B64` (una keystore en base64, alias `juegos`,
+contraseña en `JUEGOS_KS_PASS`), cada versión se instala encima de la anterior sin borrar récords.
+Sin ese secreto el APK se firma con una llave de depuración y para actualizar hay que desinstalar primero.

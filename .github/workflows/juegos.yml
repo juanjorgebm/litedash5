@@ -29,7 +29,15 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Llave de firma (opcional)
+        env:
+          LLAVE: ${{ secrets.JUEGOS_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$LLAVE" ]; then echo "$LLAVE" | base64 -d > app/juegos.keystore; echo "Firmado con la llave fija" >> "$GITHUB_STEP_SUMMARY"; fi
+
       - name: Compilar APK
+        env:
+          JUEGOS_KS_PASS: ${{ secrets.JUEGOS_KS_PASS }}
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --console=plain

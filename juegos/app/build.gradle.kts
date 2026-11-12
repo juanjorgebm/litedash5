@@ -15,25 +15,26 @@ android {
         versionName = "1.0"
     }
 
-    // Llave fija en el repo para que cada APK nuevo se instale encima del anterior.
-    signingConfigs {
-        create("fija") {
-            storeFile = file("juegos.keystore")
-            storePassword = "juegos123"
-            keyAlias = "juegos"
-            keyPassword = "juegos123"
-        }
-    }
+    // Llave fija (no va en el repo): si existe app/juegos.keystore se usa para que cada APK nuevo
+    // se instale encima del anterior. En GitHub sale del secreto JUEGOS_KEYSTORE_B64.
+    // Sin ella se firma con la llave de depuración (instalable, pero cada versión pide desinstalar).
+    val llave = file("juegos.keystore")
+    val fija = if (llave.exists()) signingConfigs.create("fija") {
+        storeFile = llave
+        storePassword = System.getenv("JUEGOS_KS_PASS")?.takeIf { it.isNotEmpty() } ?: "juegos123"
+        keyAlias = System.getenv("JUEGOS_KS_ALIAS")?.takeIf { it.isNotEmpty() } ?: "juegos"
+        keyPassword = System.getenv("JUEGOS_KS_PASS")?.takeIf { it.isNotEmpty() } ?: "juegos123"
+    } else signingConfigs.getByName("debug")
 
     buildTypes {
         getByName("debug") {
-            signingConfig = signingConfigs.getByName("fija")
+            signingConfig = fija
         }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.getByName("fija")
+            signingConfig = fija
         }
     }
 
