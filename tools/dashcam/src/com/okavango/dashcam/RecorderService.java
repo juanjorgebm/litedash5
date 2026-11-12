@@ -301,7 +301,8 @@ public class RecorderService extends Service implements SensorEventListener {
             boolean forced = forcedUntil > now;
             if (!moving) holdUntilStopped = false;
             // El clip manual o por golpe graba aunque el carro esté apagado (si la pantalla sigue encendida).
-            boolean want = forced || (accOn && armed && moving && !holdUntilStopped);
+            boolean want = wantRecording();
+            if (!want && !recording && camera != null) releaseCamera();
             if (want && !recording && now >= retryAfter) startRecording();
             else if (!want && recording) {
                 stopRecording(!accOn ? "carro apagado" : forced ? "" : !armed ? "dashcam desactivada"
@@ -413,7 +414,15 @@ public class RecorderService extends Service implements SensorEventListener {
 
     // ------------------------------------------------------------------ grabación
 
+    private int openCamId;
+
+    /** El clip manual o por golpe graba aunque el carro esté apagado (si la pantalla sigue encendida). */
+    private boolean wantRecording() {
+        return forcedUntil > SystemClock.elapsedRealtime() || (accOn && armed && moving && !holdUntilStopped);
+    }
+
     private void startRecording() {
+        if (recording) return;   // nunca se pide la cámara dos veces
         File dir = Storage.recordDir();
         folder = (Storage.isUsb(dir) ? "USB · " : "memoria interna · ") + dir.getAbsolutePath();
         int del = Storage.freeSpace(dir, null, maxInternalBytes());
@@ -421,15 +430,19 @@ public class RecorderService extends Service implements SensorEventListener {
         currentImpact = impactPending;
         impactPending = false;
         File f = new File(dir, new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(new Date()) + ".mp4");
-        final int camId = cameraId;
-        try {
+        // Si la cámara ya está abierta (corte entre tramos) se sigue usando la misma: volver a pedirla
+        // con el carro en marcha puede bloquear las cámaras del carro.
+        final boolean reuse = camera != null;
+        final int camId = reuse ? openCamId : cameraId;
+        if (!reuse) try {
             camera = Camera.open(camId);
+            openCamId = camId;
         } catch (Throwable t) {
             camera = null;
             fail("Cámara ocupada (¿está abierto Vista 360?). Reintento en 10 s");
             return;
         }
-        try {
+        if (!reuse) try {
             Camera.Parameters p = camera.getParameters();
             try {
                 p.setPreviewSize(1280, 720);
@@ -480,8 +493,11 @@ public class RecorderService extends Service implements SensorEventListener {
                             cam.post(new Runnable() {
                                 public void run() {
                                     // Corta en tramos de 3 min para que un archivo dañado no pierda todo.
-                                    stopRecording("");
+                                    // La cámara NO se suelta: el tramo siguiente usa la misma.
+                                    stopRecording("", true);
                                     retryAfter = 0;
+                                    if (wantRecording()) startRecording();
+                                    else releaseCamera();
                                 }
                             });
                         }
@@ -489,7 +505,10 @@ public class RecorderService extends Service implements SensorEventListener {
                 });
                 recorder.setOnErrorListener(new MediaRecorder.OnErrorListener() {
                     public void onError(MediaRecorder mr, int what, int extra) {
-                        cam.post(new Runnable() { public void run() { stopRecording("error del grabador"); } });
+                        cam.post(new Runnable() { public void run() {
+                            stopRecording("error del grabador");
+                            retryAfter = SystemClock.elapsedRealtime() + 10000;
+                        } });
                     }
                 });
                 recorder.prepare();
@@ -518,7 +537,10 @@ public class RecorderService extends Service implements SensorEventListener {
         retryAfter = SystemClock.elapsedRealtime() + 10000;
     }
 
-    private void stopRecording(String why) {
+    private void stopRecording(String why) { stopRecording(why, false); }
+
+    /** keepCamera: cierra solo el archivo y deja la cámara abierta para el tramo siguiente. */
+    private void stopRecording(String why, boolean keepCamera) {
         if (recorder != null) {
             try { recorder.stop(); } catch (Throwable t) {
                 if (currentFile != null && currentFile.length() < 1024) currentFile.delete();
@@ -526,7 +548,10 @@ public class RecorderService extends Service implements SensorEventListener {
             try { recorder.release(); } catch (Throwable ignored) { }
             recorder = null;
         }
-        releaseCamera();
+        if (keepCamera && camera != null) {
+            // Recupera la cámara que tenía el grabador; si falla, se suelta del todo.
+            try { camera.reconnect(); } catch (Throwable t) { releaseCamera(); }
+        } else releaseCamera();
         if (recording && why.length() > 0) event("Grabación detenida: " + why);
         File f = currentFile;
         if (recording && f != null && f.exists()) {
