@@ -156,6 +156,10 @@ object TileTypes {
     const val CAR_NAV = "car_nav"
     /** Brújula con el rumbo del carro (rumbo del GPS). */
     const val COMPASS = "compass"
+    /** Cambia entre el tema claro y el oscuro con un toque. */
+    const val THEME = "theme"
+    /** Las últimas apps abiertas desde LiteDash: una por casilla, tantas como casillas ocupe. */
+    const val RECENT_APPS = "recent_apps"
 }
 
 /** Sin fondo de tarjeta siempre: el auto, la carretera y la imagen flotan sobre el inicio. */

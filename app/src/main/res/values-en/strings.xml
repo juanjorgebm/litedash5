@@ -755,6 +755,12 @@
     <string name="nav_remaining">%1$s · %2$s left</string>
     <string name="nav_limit">Limit %1$d km/h</string>
     <string name="template_nav_music">Navigation + music</string>
+    <string name="tile_theme">Light / dark theme</string>
+    <string name="tile_theme_help">Switch between light and dark mode with a tap</string>
+    <string name="tile_recent_apps">Recent apps</string>
+    <string name="tile_recent_apps_help">The apps you opened last; make it bigger to fit more</string>
+    <string name="theme_to_light">Light mode</string>
+    <string name="theme_to_dark">Dark mode</string>
     <string name="tile_compass">Compass</string>
     <string name="tile_compass_help">Heading: where you are going</string>
     <string name="compass_n">N</string>

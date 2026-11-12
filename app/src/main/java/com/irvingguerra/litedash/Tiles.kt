@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -93,6 +94,8 @@ val TileSpecs = listOf(
     TileSpec(TileTypes.FAVORITES, R.string.tile_favorites, SizeLimits(2, 2), 3 to 3, R.string.tile_favorites_help),
     TileSpec(TileTypes.CAR_NAV, R.string.tile_car_nav, SizeLimits(2, 1), 4 to 3, R.string.tile_car_nav_help),
     TileSpec(TileTypes.COMPASS, R.string.tile_compass, SizeLimits(2, 2), 2 to 2, R.string.tile_compass_help),
+    TileSpec(TileTypes.THEME, R.string.tile_theme, SizeLimits(1, 1), 1 to 1, R.string.tile_theme_help),
+    TileSpec(TileTypes.RECENT_APPS, R.string.tile_recent_apps, SizeLimits(1, 1), 4 to 1, R.string.tile_recent_apps_help),
     TileSpec(TileTypes.WIDGET, R.string.tile_widget, SizeLimits(2, 1), 3 to 2, R.string.tile_widget_help),
 )
 
@@ -432,4 +435,51 @@ fun openNavigation(context: Context, repo: AppRepository, app: App?) {
 fun DashboardState.addTile(type: String, data: String = ""): Boolean {
     val spec = TileSpecs.first { it.type == type }
     return add(spec.type, spec.initialSize, spec.limits, data)
+}
+
+/** Tema claro u oscuro con un toque: muestra a cuál cambia (sol = pasar a claro, luna = pasar a oscuro). */
+@Composable
+fun ThemeTile(prefs: Preferences) {
+    val c = LocalColors.current
+    val dark = c.dark
+    Card(Modifier.fillMaxSize(), onClick = { prefs.theme = if (dark) ThemeMode.LIGHT else ThemeMode.DARK }) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(10.dp), contentAlignment = Alignment.Center) {
+            val side = (minOf(maxWidth, maxHeight) * 0.5f).coerceAtMost(72.dp)
+            val height = maxHeight
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(if (dark) Icons.sun else Icons.moon, c.accent, side)
+                if (height > 90.dp) {
+                    Spacer(Modifier.height(8.dp))
+                    Label(stringResource(if (dark) R.string.theme_to_light else R.string.theme_to_dark), Typography.small.copy(fontWeight = FontWeight.Medium), maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Apps recientes: las últimas abiertas desde LiteDash, una por casilla del tablero ([columns] × [rows]); al
+ * agrandar el widget caben más. Las casillas sin app todavía quedan vacías.
+ */
+@Composable
+fun RecentAppsTile(repo: AppRepository, apps: List<App>, columns: Int, rows: Int) {
+    val context = LocalContext.current
+    val c = LocalColors.current
+    val recent = remember(repo.recents, apps) { repo.recents.mapNotNull { key -> repo.find(apps, key) }.take(columns * rows) }
+    // La misma separación que hay entre las piezas del tablero: cada app queda del tamaño de una casilla.
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        for (r in 0 until rows) {
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (col in 0 until columns) {
+                    val app = recent.getOrNull(r * columns + col)
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        if (app != null) AppTile(repo, app) { repo.open(context, app) }
+                        else Card(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.clock, c.textMuted.copy(alpha = 0.4f), 24.dp) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

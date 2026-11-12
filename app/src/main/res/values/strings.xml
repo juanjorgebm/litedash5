@@ -776,6 +776,12 @@
     <string name="nav_remaining">Faltan %1$s · %2$s</string>
     <string name="nav_limit">Límite %1$d km/h</string>
     <string name="template_nav_music">Navegación + música</string>
+    <string name="tile_theme">Tema claro / oscuro</string>
+    <string name="tile_theme_help">Cambia entre el modo claro y el oscuro con un toque</string>
+    <string name="tile_recent_apps">Apps recientes</string>
+    <string name="tile_recent_apps_help">Las últimas apps que abriste; al agrandarlo caben más</string>
+    <string name="theme_to_light">Modo claro</string>
+    <string name="theme_to_dark">Modo oscuro</string>
     <string name="tile_compass">Brújula</string>
     <string name="tile_compass_help">Rumbo: hacia dónde te diriges</string>
     <string name="compass_n">N</string>

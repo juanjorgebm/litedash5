@@ -32,6 +32,9 @@ data class App(val name: String, val pkg: String, val activity: String) {
  * compartido: el cajón, el dock y los widgets leen la misma y se actualiza sola al instalar,
  * quitar o actualizar una app mientras LiteDash está a la vista (ver [watch]).
  */
+/** Cuántas apps recientes se recuerdan. */
+private const val RECENTS_KEEP = 24
+
 class AppRepository(context: Context) {
     private val appContext = context.applicationContext
     private val pm: PackageManager = context.packageManager
@@ -118,6 +121,17 @@ class AppRepository(context: Context) {
     fun firstOf(apps: List<App>, vararg packages: String) =
         packages.firstNotNullOfOrNull { p -> apps.firstOrNull { it.pkg == p } }
 
+    private val recentPrefs = appContext.getSharedPreferences("recent_apps", Context.MODE_PRIVATE)
+
+    /** Las últimas apps abiertas desde LiteDash ([App.key]), la más reciente primero. */
+    var recents by mutableStateOf(recentPrefs.getString("keys", "").orEmpty().split('\n').filter { it.isNotBlank() })
+        private set
+
+    private fun noteOpened(app: App) {
+        recents = (listOf(app.key) + recents.filter { it != app.key }).take(RECENTS_KEEP)
+        recentPrefs.edit().putString("keys", recents.joinToString("\n")).apply()
+    }
+
     /** Si devuelve true, ya abrió la app a su manera (p. ej. en pantalla dividida). */
     var opener: ((Context, Intent, String) -> Boolean)? = null
 
@@ -126,6 +140,7 @@ class AppRepository(context: Context) {
             .addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(app.component)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        noteOpened(app)
         if (opener?.invoke(context, intent, app.pkg) == true) return
         runCatching { context.startActivity(intent) }
     }

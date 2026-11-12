@@ -314,6 +314,8 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
             CarNavTile(d, onOpen = remember(navApp) { { actions.onNavigate(navApp) } })
         }
         TileTypes.COMPASS -> CompassTile(d)
+        TileTypes.THEME -> ThemeTile(d.prefs)
+        TileTypes.RECENT_APPS -> RecentAppsTile(d.apps, apps, p.width, p.height)
         TileTypes.WIDGET -> WidgetTile(p.data)
         TileTypes.PHONE -> ShortcutTile(Icons.phone, stringResource(R.string.tile_phone), null) {
             openDialer(context)
