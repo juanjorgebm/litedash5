@@ -269,6 +269,7 @@ internal fun iconOf(type: String) = when (type) {
     TileTypes.COMPASS -> Icons.navigate
     TileTypes.THEME -> Icons.sun
     TileTypes.RECENT_APPS -> Icons.clock
+    TileTypes.ASSISTANT -> Icons.mic
     TileTypes.WIDGET -> Icons.apps
     else -> Icons.apps
 }

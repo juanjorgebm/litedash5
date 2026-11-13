@@ -96,6 +96,7 @@ val TileSpecs = listOf(
     TileSpec(TileTypes.COMPASS, R.string.tile_compass, SizeLimits(2, 2), 2 to 2, R.string.tile_compass_help),
     TileSpec(TileTypes.THEME, R.string.tile_theme, SizeLimits(1, 1), 1 to 1, R.string.tile_theme_help),
     TileSpec(TileTypes.RECENT_APPS, R.string.tile_recent_apps, SizeLimits(1, 1), 4 to 1, R.string.tile_recent_apps_help),
+    TileSpec(TileTypes.ASSISTANT, R.string.tile_assistant, SizeLimits(1, 1), 1 to 1, R.string.tile_assistant_help),
     TileSpec(TileTypes.WIDGET, R.string.tile_widget, SizeLimits(2, 1), 3 to 2, R.string.tile_widget_help),
 )
 

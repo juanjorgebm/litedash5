@@ -160,6 +160,8 @@ object TileTypes {
     const val THEME = "theme"
     /** Las últimas apps abiertas desde LiteDash: una por casilla, tantas como casillas ocupe. */
     const val RECENT_APPS = "recent_apps"
+    /** El asistente: un toque lo abre para preguntarle hablando. */
+    const val ASSISTANT = "assistant"
 }
 
 /** Sin fondo de tarjeta siempre: el auto, la carretera y la imagen flotan sobre el inicio. */

@@ -812,4 +812,24 @@
     <string name="places_unnamed">Sin nombre</string>
     <string name="places_m">%1$d m</string>
     <string name="places_km">%1$s km</string>
+    <string name="tile_assistant">Asistente</string>
+    <string name="tile_assistant_help">Tócalo y pregúntale hablando; responde en pantalla (Gemini, con tu clave gratis)</string>
+    <string name="assistant_tap">Toca y habla</string>
+    <string name="assistant_listening">Escuchando… toca para enviar</string>
+    <string name="assistant_thinking">Pensando…</string>
+    <string name="assistant_empty">Pregunta lo que quieras: toca el micrófono y habla, o escribe abajo.</string>
+    <string name="assistant_type">Escribe tu pregunta</string>
+    <string name="assistant_send">Enviar</string>
+    <string name="assistant_clear">Borrar</string>
+    <string name="assistant_key">Clave</string>
+    <string name="assistant_voice_on">Voz: sí</string>
+    <string name="assistant_voice_off">Voz: no</string>
+    <string name="assistant_key_help">El asistente usa Gemini con tu propia clave gratis. Créala en aistudio.google.com/apikey con tu cuenta de Google y escríbela aquí. Para no teclearla, guárdala en un archivo gemini.txt en la USB o en Descargas y toca «Leer de la USB». La clave solo se guarda en esta pantalla.</string>
+    <string name="assistant_key_hint">Clave de Gemini</string>
+    <string name="assistant_key_save">Guardar</string>
+    <string name="assistant_key_file">Leer de la USB</string>
+    <string name="assistant_key_cancel">Cancelar</string>
+    <string name="assistant_key_short">Esa clave está incompleta.</string>
+    <string name="assistant_key_found">Clave encontrada. Toca Guardar.</string>
+    <string name="assistant_key_missing">No encontré gemini.txt en la USB ni en Descargas.</string>
 </resources>

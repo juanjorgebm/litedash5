@@ -791,4 +791,24 @@
     <string name="places_unnamed">Unnamed</string>
     <string name="places_m">%1$d m</string>
     <string name="places_km">%1$s km</string>
+    <string name="tile_assistant">Assistant</string>
+    <string name="tile_assistant_help">Tap it and ask by voice; the answer shows on screen (Gemini, with your free key)</string>
+    <string name="assistant_tap">Tap and speak</string>
+    <string name="assistant_listening">Listening… tap to send</string>
+    <string name="assistant_thinking">Thinking…</string>
+    <string name="assistant_empty">Ask anything: tap the microphone and speak, or type below.</string>
+    <string name="assistant_type">Type your question</string>
+    <string name="assistant_send">Send</string>
+    <string name="assistant_clear">Clear</string>
+    <string name="assistant_key">Key</string>
+    <string name="assistant_voice_on">Voice: on</string>
+    <string name="assistant_voice_off">Voice: off</string>
+    <string name="assistant_key_help">The assistant uses Gemini with your own free key. Create it at aistudio.google.com/apikey with your Google account and type it here. To avoid typing, save it in a gemini.txt file on the USB drive or in Downloads and tap «Read from USB». The key is stored only on this screen.</string>
+    <string name="assistant_key_hint">Gemini key</string>
+    <string name="assistant_key_save">Save</string>
+    <string name="assistant_key_file">Read from USB</string>
+    <string name="assistant_key_cancel">Cancel</string>
+    <string name="assistant_key_short">That key is incomplete.</string>
+    <string name="assistant_key_found">Key found. Tap Save.</string>
+    <string name="assistant_key_missing">gemini.txt was not found on the USB drive or in Downloads.</string>
 </resources>

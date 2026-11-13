@@ -32,6 +32,9 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Solo para copiar las apps del carro a Descargas (Investigar app del carro): Android 5 a 9. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Asistente: grabar la pregunta hablada, solo mientras su pantalla está abierta y escuchando. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <!-- Escáner OBD por cable USB (opcional: también va por Bluetooth o Wi-Fi). -->
