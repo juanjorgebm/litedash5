@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Arrays;
+import java.util.Locale;
 
 /**
  * Fotos hacia la plataforma con el protocolo de transferencia de la cámara Teltonika DualCam:
@@ -39,6 +40,8 @@ final class Photos {
     volatile int pending;
 
     private final File dir;
+    /** Para fijar en el servidor la ubicación de cada foto justo antes de subirla. */
+    Tracker tracker;
     private final long imei;
     private final SharedPreferences prefs;
     private volatile boolean running = true;
@@ -77,18 +80,25 @@ final class Photos {
         sender.interrupt();
     }
 
-    /** Guarda la foto en la cola (en otro hilo, para no frenar a quien la tomó). */
-    void add(final Bitmap b) {
+    /**
+     * Guarda la foto en la cola (en otro hilo, para no frenar a quien la tomó). El nombre lleva la
+     * hora y la posición de cuando se tomó, para que al subirla se le ponga esa ubicación y no la
+     * del momento en que se sube.
+     */
+    void add(final Bitmap b, final double lat, final double lon, final long timeMs) {
         if (!enabled || b == null) return;
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    File tmp = new File(dir, System.currentTimeMillis() + ".tmp");
+                    File tmp = new File(dir, "p" + System.nanoTime() + ".tmp");
                     FileOutputStream o = new FileOutputStream(tmp);
                     b.compress(Bitmap.CompressFormat.JPEG, 80, o);
                     o.close();
                     b.recycle();
-                    tmp.renameTo(new File(dir, tmp.getName().replace(".tmp", ".jpg")));
+                    long t = timeMs > 0 ? timeMs : System.currentTimeMillis();
+                    long latE6 = Math.round(lat * 1e6), lonE6 = Math.round(lon * 1e6);
+                    String name = String.format(Locale.US, "%013d_%d_%d.jpg", t, latE6, lonE6);
+                    tmp.renameTo(new File(dir, name));
                     File[] all = list();
                     // Mucho tiempo sin Internet: se pierden las más viejas.
                     for (int i = 0; i < all.length - MAX_FILES; i++) all[i].delete();
@@ -127,6 +137,7 @@ final class Photos {
                 DataInputStream in = new DataInputStream(sock.getInputStream());
                 for (File f : files) {
                     if (!running || !enabled) break;
+                    fixPhotoLocation(f);
                     sendOne(f, in, out);
                     f.delete();
                     sent++;
@@ -152,6 +163,19 @@ final class Photos {
                 try { if (sock != null) sock.close(); } catch (Throwable ignored) { }
             }
         }
+    }
+
+    /** Manda la posición guardada de la foto por el puerto de ubicación, antes de subir la foto. */
+    private void fixPhotoLocation(File f) {
+        if (tracker == null) return;
+        try {
+            String[] p = f.getName().replace(".jpg", "").split("_");
+            if (p.length < 3) return;
+            long t = Long.parseLong(p[0]);
+            double lat = Long.parseLong(p[1]) / 1e6, lon = Long.parseLong(p[2]) / 1e6;
+            if (lat == 0 && lon == 0) return;   // sin GPS cuando se tomó: no hay nada que fijar
+            tracker.sendSinglePoint(lat, lon, t);
+        } catch (Throwable ignored) { }
     }
 
     private void init(DataOutputStream out, int settings) throws IOException {

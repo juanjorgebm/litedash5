@@ -133,6 +133,7 @@ public class RecorderService extends Service implements SensorEventListener {
         openOnAcc = prefs.getBoolean(K_OPEN_ON_ACC, true);
         tracker = new Tracker(this, prefs);
         photos = new Photos(this, prefs, tracker.imei);
+        photos.tracker = tracker;
         tracker.onPhotoRequest = new Runnable() { public void run() { photoAsap = true; } };
         startGps();
 
@@ -436,7 +437,7 @@ public class RecorderService extends Service implements SensorEventListener {
         main.post(new Runnable() {
             public void run() {
                 try {
-                    if (preview != null && recording) photos.add(preview.getBitmap(1280, 480));
+                    if (preview != null && recording) photos.add(preview.getBitmap(1280, 480), lat, lon, tracker != null ? tracker.bestNow() : System.currentTimeMillis());
                 } catch (Throwable t) { photos.status = "No se pudo tomar la foto: " + t.getMessage(); }
             }
         });

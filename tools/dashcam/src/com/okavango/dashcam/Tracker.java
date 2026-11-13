@@ -253,12 +253,27 @@ final class Tracker {
         Bundle ex = l.getExtras();
         if (ex != null && ex.getInt("satellites", 0) > 0) sats = Math.min(ex.getInt("satellites"), 50);
         int speed = Math.max(0, Math.min(Math.round(kmh), 400));
+        int alt = l.hasAltitude() ? (int) Math.max(-1000, Math.min(l.getAltitude(), 9000)) : 0;
+        int course = l.hasBearing() ? ((int) l.getBearing()) % 360 : 0;
+        writeRecord(o, timeMs, l.getLongitude(), l.getLatitude(), alt, course, sats, speed, ignition, moving);
+        return bo.toByteArray();
+    }
+
+    /** Registro AVL con solo posición y hora (para fijar la ubicación de una foto que se va a subir). */
+    private static byte[] recordAt(double plon, double plat, long timeMs) throws Exception {
+        ByteArrayOutputStream bo = new ByteArrayOutputStream(40);
+        writeRecord(new DataOutputStream(bo), timeMs, plon, plat, 0, 0, 8, 0, true, false);
+        return bo.toByteArray();
+    }
+
+    private static void writeRecord(DataOutputStream o, long timeMs, double lon, double lat,
+            int alt, int course, int sats, int speed, boolean ignition, boolean moving) throws Exception {
         o.writeLong(timeMs);
         o.writeByte(0);                                          // prioridad
-        o.writeInt((int) Math.round(l.getLongitude() * 1e7));
-        o.writeInt((int) Math.round(l.getLatitude() * 1e7));
-        o.writeShort(l.hasAltitude() ? (int) Math.max(-1000, Math.min(l.getAltitude(), 9000)) : 0);
-        o.writeShort(l.hasBearing() ? ((int) l.getBearing()) % 360 : 0);
+        o.writeInt((int) Math.round(lon * 1e7));
+        o.writeInt((int) Math.round(lat * 1e7));
+        o.writeShort(alt);
+        o.writeShort(course);
         o.writeByte(sats);
         o.writeShort(speed);
         o.writeByte(0);                                          // sin evento
@@ -270,7 +285,35 @@ final class Tracker {
         o.writeByte(24); o.writeShort(speed);                    // velocidad
         o.writeByte(0);                                          // de 4 bytes
         o.writeByte(0);                                          // de 8 bytes
-        return bo.toByteArray();
+    }
+
+    /**
+     * Abre una conexión corta y envía un solo punto con la posición y hora en que se tomó una foto,
+     * para que el servidor le ponga ESA ubicación a la foto que se sube enseguida (la plataforma le
+     * pone a la foto la última ubicación recibida). Devuelve true si el servidor lo confirmó.
+     */
+    boolean sendSinglePoint(double plat, double plon, long timeMs) {
+        if (!enabled) return false;
+        Socket s = null;
+        try {
+            s = new Socket();
+            s.connect(new InetSocketAddress(HOST, port), 15_000);
+            s.setSoTimeout(20_000);
+            DataOutputStream o = new DataOutputStream(s.getOutputStream());
+            DataInputStream in = new DataInputStream(s.getInputStream());
+            o.writeShort(imei.length());
+            o.write(imei.getBytes("US-ASCII"));
+            o.flush();
+            if (in.readUnsignedByte() != 1) return false;
+            List<byte[]> one = new ArrayList<>();
+            one.add(recordAt(plon, plat, timeMs));
+            write(o, one);
+            return in.readInt() == 1;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            try { if (s != null) s.close(); } catch (Throwable ignored) { }
+        }
     }
 
     private int count() {
