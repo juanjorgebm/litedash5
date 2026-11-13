@@ -15,6 +15,11 @@ import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.telephony.TelephonyManager;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
@@ -42,6 +47,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -94,7 +101,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("Diagnóstico de cámaras · Okavango · v2.6");
+        title.setText("Diagnóstico de cámaras · Okavango · v2.7");
         title.setTextColor(Color.rgb(0xFF, 0xB5, 0x47));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         root.addView(title);
@@ -474,6 +481,17 @@ public class MainActivity extends Activity {
                 }).start();
             }
         });
+        addButton("¿Internet propio?", new View.OnClickListener() {
+            public void onClick(View v) {
+                reportView.setText("Revisando conexión…");
+                new Thread(new Runnable() {
+                    public void run() {
+                        final String r = netReport();
+                        ui.post(new Runnable() { public void run() { reportView.setText(r); } });
+                    }
+                }).start();
+            }
+        });
         addButton("Dashcam segura", new View.OnClickListener() {
             public void onClick(View v) { startActivity(new Intent(MainActivity.this, SafeCamActivity.class)); }
         });
@@ -576,6 +594,125 @@ public class MainActivity extends Activity {
     private void line(String s) {
         report.append(s).append('\n');
     }
+
+    /**
+     * ¿La pantalla tiene conexión propia a Internet (chip de datos / módem), o solo Wi-Fi?
+     * Revisa la tarjeta SIM, los datos móviles, el Wi-Fi, las interfaces de red activas y las
+     * propiedades del módem. Guarda el informe en diagnostico_internet.txt.
+     */
+    private String netReport() {
+        StringBuilder b = new StringBuilder();
+        boolean hasCellular = false, cellularUp = false;
+
+        // ---- Telefonía / SIM / datos móviles ----
+        try {
+            TelephonyManager tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
+            int phoneType = tm.getPhoneType();   // 0 = sin radio telefónico
+            b.append("Radio telefónico (módem): ").append(phoneType == TelephonyManager.PHONE_TYPE_NONE
+                    ? "NO tiene" : "SÍ (tipo " + phoneType + ")").append('\n');
+            if (phoneType != TelephonyManager.PHONE_TYPE_NONE) hasCellular = true;
+            int sim = tm.getSimState();
+            String[] simTxt = {"desconocido", "sin SIM", "PIN", "PUK", "bloqueada por red", "lista"};
+            b.append("Tarjeta SIM: ").append(sim >= 0 && sim < simTxt.length ? simTxt[sim] : String.valueOf(sim)).append('\n');
+            if (sim == TelephonyManager.SIM_STATE_READY) {
+                b.append("  Operador: ").append(nz(tm.getNetworkOperatorName())).append('\n');
+            }
+            try {
+                int ds = tm.getDataState();   // 0 desconectado, 2 conectado
+                b.append("Datos móviles: ").append(ds == TelephonyManager.DATA_CONNECTED ? "conectados"
+                        : ds == TelephonyManager.DATA_DISCONNECTED ? "desconectados" : String.valueOf(ds)).append('\n');
+            } catch (Throwable ignored) { }
+        } catch (Throwable t) {
+            b.append("Telefonía: no se pudo leer (").append(t).append(")\n");
+        }
+
+        // ---- Wi-Fi ----
+        try {
+            WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            b.append("\nWi-Fi: ").append(wm.isWifiEnabled() ? "encendido" : "apagado").append('\n');
+            WifiInfo wi = wm.getConnectionInfo();
+            if (wi != null && wi.getNetworkId() != -1) {
+                b.append("  Conectado a: ").append(nz(wi.getSSID())).append('\n');
+            } else {
+                b.append("  No conectado a ninguna red\n");
+            }
+        } catch (Throwable t) {
+            b.append("Wi-Fi: no se pudo leer (").append(t).append(")\n");
+        }
+
+        // ---- Red activa (por dónde sale Internet ahora) ----
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            NetworkInfo ni = cm.getActiveNetworkInfo();
+            b.append("\nInternet ahora: ");
+            if (ni != null && ni.isConnected()) {
+                b.append("SÍ, por ").append(ni.getTypeName());
+                if (ni.getType() == ConnectivityManager.TYPE_MOBILE) cellularUp = true;
+                b.append('\n');
+            } else {
+                b.append("NO hay Internet en este momento\n");
+            }
+        } catch (Throwable t) {
+            b.append("Red activa: no se pudo leer (").append(t).append(")\n");
+        }
+
+        // ---- Interfaces de red (ccmni*/rmnet* = datos móviles, wlan0 = Wi-Fi) ----
+        b.append("\nInterfaces de red activas:\n");
+        try {
+            List<NetworkInterface> ifs = Collections.list(NetworkInterface.getNetworkInterfaces());
+            for (NetworkInterface nif : ifs) {
+                if (!nif.isUp() || nif.isLoopback()) continue;
+                String name = nif.getName();
+                StringBuilder ips = new StringBuilder();
+                for (InetAddress a : Collections.list(nif.getInetAddresses())) {
+                    if (a.isLoopbackAddress() || a.getHostAddress().contains(":")) continue;
+                    if (ips.length() > 0) ips.append(", ");
+                    ips.append(a.getHostAddress());
+                }
+                if (ips.length() == 0) continue;
+                boolean cell = name.startsWith("ccmni") || name.startsWith("rmnet") || name.startsWith("ppp")
+                        || name.startsWith("usb") || name.startsWith("wwan");
+                if (cell) cellularUp = true;
+                b.append("  ").append(name).append("  ").append(ips)
+                        .append(cell ? "  (datos móviles)" : name.startsWith("wlan") ? "  (Wi-Fi)" : "").append('\n');
+            }
+        } catch (Throwable t) {
+            b.append("  no se pudo leer (").append(t).append(")\n");
+        }
+
+        // ---- Propiedades del módem ----
+        try {
+            Process p = Runtime.getRuntime().exec("getprop");
+            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String s2; StringBuilder modem = new StringBuilder();
+            while ((s2 = r.readLine()) != null) {
+                String low = s2.toLowerCase(Locale.ROOT);
+                if ((low.contains("gsm.sim") || low.contains("gsm.operator") || low.contains("ril.")
+                        || low.contains("modem") || low.contains("radio")) && !low.contains("]: []")) {
+                    modem.append("  ").append(s2).append('\n');
+                }
+            }
+            r.close();
+            if (modem.length() > 0) { b.append("\nSeñales del módem:\n").append(modem); hasCellular = true; }
+        } catch (Throwable ignored) { }
+
+        // ---- Conclusión ----
+        String concl;
+        if (cellularUp) concl = "La pantalla TIENE Internet propio por datos móviles y está activo.";
+        else if (hasCellular) concl = "La pantalla parece tener módem/SIM, pero los datos no están activos ahora. Revisá que la SIM tenga saldo y los datos encendidos.";
+        else concl = "La pantalla NO tiene conexión propia: solo Wi-Fi. Para rastreo siempre, necesitás un módem 4G con chip de datos.";
+        String out = "¿La pantalla tiene Internet propio?\n\n" + concl + "\n\n----------\n" + b;
+
+        String saved = null;
+        for (File f : new File[]{new File(Environment.getExternalStorageDirectory(), "diagnostico_internet.txt"),
+                new File(getExternalFilesDir(null), "diagnostico_internet.txt")}) {
+            try { FileOutputStream o = new FileOutputStream(f); o.write(out.getBytes("UTF-8")); o.close(); saved = f.getAbsolutePath(); break; } catch (Throwable ignored) { }
+        }
+        if (saved != null) out += "\nGuardado en: " + saved;
+        return out;
+    }
+
+    private static String nz(String s) { return s == null || s.isEmpty() ? "—" : s; }
 
     private String saveReport() {
         String stamp = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(new Date());
