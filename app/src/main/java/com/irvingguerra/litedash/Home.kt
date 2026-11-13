@@ -120,6 +120,7 @@ sealed interface Panel {
     data object WeatherFull : Panel
     data object Contacts : Panel
     data object Assistant : Panel
+    data object Photos : Panel
     /** El mapa a pantalla completa con los lugares cercanos; [data] es el aspecto de la pieza que se tocó. */
     data class MapFull(val data: String) : Panel
     data object Settings : Panel
@@ -318,6 +319,7 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
         TileTypes.THEME -> ThemeTile(d.prefs)
         TileTypes.RECENT_APPS -> RecentAppsTile(d.apps, apps, p.width, p.height)
         TileTypes.ASSISTANT -> AssistantTile(onOpen = { actions.onPanel(Panel.Assistant) })
+        TileTypes.PHOTOS -> PhotosTile(onOpen = { actions.onPanel(Panel.Photos) })
         TileTypes.WIDGET -> WidgetTile(p.data)
         TileTypes.PHONE -> ShortcutTile(Icons.phone, stringResource(R.string.tile_phone), null) {
             openDialer(context)
@@ -668,6 +670,7 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
             Panel.Drawer -> DrawerPanel(d, apps, close = { panel = null })
             Panel.Contacts -> ContactsScreen(close = { panel = null })
             Panel.Assistant -> AssistantScreen(d, close = { panel = null })
+            Panel.Photos -> PhotosScreen(close = { panel = null })
             Panel.WeatherFull -> WeatherFullScreen(d, close = { panel = null })
             Panel.RadioFull -> RadioScreen({ panel = null }, Modifier.fillMaxSize())
             is Panel.MapFull -> MapFullScreen(d, p.data, mapApp(d, apps), close = { panel = null })

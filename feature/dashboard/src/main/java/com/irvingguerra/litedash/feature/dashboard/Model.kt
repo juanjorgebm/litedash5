@@ -162,6 +162,8 @@ object TileTypes {
     const val RECENT_APPS = "recent_apps"
     /** El asistente: un toque lo abre para preguntarle hablando. */
     const val ASSISTANT = "assistant"
+    /** Fotos pasando (álbum compartido de Google Fotos o carpeta de la USB); un toque las pone a pantalla completa. */
+    const val PHOTOS = "photos"
 }
 
 /** Sin fondo de tarjeta siempre: el auto, la carretera y la imagen flotan sobre el inicio. */

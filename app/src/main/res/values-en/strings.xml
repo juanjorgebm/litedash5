@@ -811,4 +811,13 @@
     <string name="assistant_key_short">That key is incomplete.</string>
     <string name="assistant_key_found">Key found. Tap Save.</string>
     <string name="assistant_key_missing">gemini.txt was not found on the USB drive or in Downloads.</string>
+    <string name="tile_photos">Photos</string>
+    <string name="tile_photos_help">Your photos as a slideshow, from a shared Google Photos album or the USB drive; tap to see them full screen</string>
+    <string name="photos_empty">Tap to choose your photos</string>
+    <string name="photos_help">In Google Photos create an album, tap Share and then Create link, and type that link here (or save it in a fotos.txt file on the USB drive and tap «Read from USB»). The photos are downloaded to this screen and then show without internet. Photos in a folder named Fotos on the USB drive are shown too. Note: anyone with the link can see that album.</string>
+    <string name="photos_link_hint">Album link (photos.app.goo.gl/…)</string>
+    <string name="photos_save">Save and download</string>
+    <string name="photos_syncing">Downloading…</string>
+    <string name="photos_link_file">Read from USB</string>
+    <string name="photos_view">View the %1$d photos</string>
 </resources>

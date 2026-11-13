@@ -832,4 +832,13 @@
     <string name="assistant_key_short">Esa clave está incompleta.</string>
     <string name="assistant_key_found">Clave encontrada. Toca Guardar.</string>
     <string name="assistant_key_missing">No encontré gemini.txt en la USB ni en Descargas.</string>
+    <string name="tile_photos">Fotos</string>
+    <string name="tile_photos_help">Tus fotos pasando, de un álbum compartido de Google Fotos o de la USB; tócalo para verlas en grande</string>
+    <string name="photos_empty">Toca para elegir tus fotos</string>
+    <string name="photos_help">En Google Fotos crea un álbum, toca Compartir y luego Crear enlace, y escribe ese enlace aquí (o guárdalo en un archivo fotos.txt en la USB y toca «Leer de la USB»). Las fotos se bajan a la pantalla y después se ven sin internet. También se muestran las fotos de una carpeta llamada Fotos en la USB. Ojo: cualquiera con el enlace puede ver ese álbum.</string>
+    <string name="photos_link_hint">Enlace del álbum (photos.app.goo.gl/…)</string>
+    <string name="photos_save">Guardar y bajar</string>
+    <string name="photos_syncing">Bajando…</string>
+    <string name="photos_link_file">Leer de la USB</string>
+    <string name="photos_view">Ver las %1$d fotos</string>
 </resources>
