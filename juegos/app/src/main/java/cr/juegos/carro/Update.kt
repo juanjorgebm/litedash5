@@ -36,6 +36,7 @@ object Updater {
     @Volatile var notes: List<Novedad> = emptyList(); private set
     @Volatile var progress = 0f; private set
     @Volatile var error = ""; private set
+    @Volatile var detail = ""; private set
     private val main = Handler(Looper.getMainLooper())
 
     fun currentCode(ctx: Context): Int = try {
@@ -70,10 +71,11 @@ object Updater {
         parse(ctx.assets.open("novedades.txt").bufferedReader().readText())
     } catch (e: Exception) { emptyList() }
 
-    private fun open(url: String): HttpURLConnection {
+    private fun open(ctx: Context, url: String): HttpURLConnection {
         var u = url
         repeat(6) {
             val c = URL(u).openConnection() as HttpURLConnection
+            if (c is javax.net.ssl.HttpsURLConnection) c.sslSocketFactory = Net.socketFactory(ctx)
             c.connectTimeout = 15_000; c.readTimeout = 20_000
             c.instanceFollowRedirects = false
             c.setRequestProperty("User-Agent", "JuegosCarro")
@@ -93,13 +95,13 @@ object Updater {
         val app = ctx.applicationContext
         Thread {
             try {
-                val c = open(BASE + "version.json?t=" + System.currentTimeMillis())
+                val c = open(app, BASE + "version.json?t=" + System.currentTimeMillis())
                 val js = JSONObject(c.inputStream.bufferedReader().readText()); c.disconnect()
                 latestCode = js.getInt("code"); latestName = js.optString("name", "1.$latestCode")
                 notes = parse(js.optString("notes", ""))
                 state = if (latestCode > currentCode(app)) State.AVAILABLE else State.UP_TO_DATE
             } catch (e: Exception) {
-                error = "No se pudo revisar. ¿Hay internet?"
+                error = "No se pudo revisar la versión nueva"; detail = Net.reason(e)
                 state = State.ERROR
             }
             main.post(onDone)
@@ -115,7 +117,7 @@ object Updater {
         Thread {
             try {
                 val f = apkFile(app)
-                val c = open(BASE + APK_NAME + "?v=" + latestCode)
+                val c = open(app, BASE + APK_NAME + "?v=" + latestCode)
                 val total = c.contentLength.toLong()
                 var done = 0L
                 val tmp = File(f.path + ".part")
@@ -139,7 +141,7 @@ object Updater {
                 progress = 1f; state = State.READY
                 main.post { onChange(); install(app) }
             } catch (e: Exception) {
-                error = "Se cortó la descarga. Intenta otra vez."
+                error = "Se cortó la descarga. Intenta otra vez."; detail = Net.reason(e)
                 state = State.ERROR
                 main.post(onChange)
             }
@@ -222,6 +224,9 @@ class UpdateScreen(app: MainActivity) : Screen(app) {
             Updater.State.ERROR -> Updater.error to C.RED
         }
         G.textFit(c, msg, cx, lp.top + lp.height() * 0.38f, barH * 0.34f, lp.width() * 0.9f, col, font = Fonts.black)
+        if (st == Updater.State.ERROR && Updater.detail.isNotEmpty()) {
+            G.lines(c, Updater.detail.chunked(38).take(2).joinToString("\n"), cx, lp.top + lp.height() * 0.48f, barH * 0.22f, lp.width() * 0.9f, C.TEXT2)
+        }
         if (st == Updater.State.DOWNLOADING) {
             val bw = lp.width() * 0.8f; val by = lp.top + lp.height() * 0.48f
             G.rr(c, cx - bw / 2, by, cx + bw / 2, by + barH * 0.16f, barH * 0.08f, C.CARD)
