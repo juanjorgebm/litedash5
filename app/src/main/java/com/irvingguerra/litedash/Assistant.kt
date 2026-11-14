@@ -114,12 +114,77 @@ object Assistant {
         }
     }
 
-    /** Lleva a un lugar con Waze (la app vieja entiende waze://; si no, la dirección web de Waze). */
+    private val COORDS = Regex("""(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})""")
+
+    /** El nombre del lugar para mostrar (sin las coordenadas que trae al final). */
+    fun placeName(place: String) = place.substringBefore('|').trim().trimEnd(',')
+
+    /**
+     * Lleva a un lugar con Waze directo a navegar: se buscan las coordenadas exactas (en el mapa de la pantalla, en
+     * OpenStreetMap cerca de donde va el carro, o las que dio Gemini) y se le pasan a Waze; con solo el nombre, Waze
+     * abre la búsqueda y hay que elegir.
+     */
     fun navigate(context: Context, place: String) {
-        val q = java.net.URLEncoder.encode(place, "UTF-8").replace("+", "%20")
-        val app = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("waze://?q=$q&navigate=yes")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (runCatching { context.startActivity(app) }.isSuccess) return
-        open(context, "https://waze.com/ul?q=$q&navigate=yes")
+        val name = placeName(place)
+        val hint = COORDS.find(place.substringAfter('|', ""))?.let { it.groupValues[1].toDouble() to it.groupValues[2].toDouble() }
+        android.widget.Toast.makeText(context, "Buscando $name…", android.widget.Toast.LENGTH_SHORT).show()
+        Thread {
+            val point = runCatching { coordinates(context, name, hint) }.getOrNull()
+            main.post {
+                if (point != null) {
+                    val ll = "%.6f,%.6f".format(Locale.US, point.first, point.second)
+                    val app = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("waze://?ll=$ll&navigate=yes")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    if (runCatching { context.startActivity(app) }.isSuccess) return@post
+                    open(context, "https://waze.com/ul?ll=$ll&navigate=yes")
+                } else {
+                    val q = java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")
+                    val app = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("waze://?q=$q&navigate=yes")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    if (runCatching { context.startActivity(app) }.isSuccess) return@post
+                    open(context, "https://waze.com/ul?q=$q&navigate=yes")
+                }
+            }
+        }.start()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun coordinates(context: Context, name: String, hint: Pair<Double, Double>?): Pair<Double, Double>? {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+        val here = listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER, android.location.LocationManager.PASSIVE_PROVIDER)
+            .mapNotNull { p -> runCatching { manager?.getLastKnownLocation(p) }.getOrNull() }
+            .maxByOrNull { it.elapsedRealtimeNanos }
+        fun near(lat: Double, lon: Double): Boolean {
+            val from = here ?: hint?.let { h -> return Math.abs(h.first - lat) < 0.3 && Math.abs(h.second - lon) < 0.3 } ?: return true
+            return Math.abs(from.latitude - lat) < 1.5 && Math.abs(from.longitude - lon) < 1.5
+        }
+        // 1) El buscador de direcciones de la pantalla (si tiene).
+        runCatching {
+            if (android.location.Geocoder.isPresent()) {
+                val list = android.location.Geocoder(context, Locale.forLanguageTag("es-CR")).getFromLocationName(name, 3).orEmpty()
+                list.firstOrNull { it.hasLatitude() && near(it.latitude, it.longitude) }?.let { return it.latitude to it.longitude }
+            }
+        }
+        // 2) OpenStreetMap, prefiriendo lo que está cerca del carro.
+        runCatching {
+            val box = here?.let { "&viewbox=${it.longitude - 0.5},${it.latitude + 0.5},${it.longitude + 0.5},${it.latitude - 0.5}" }.orEmpty()
+            val url = "https://nominatim.openstreetmap.org/search?format=json&limit=3&countrycodes=cr&q=" + java.net.URLEncoder.encode(name, "UTF-8") + box
+            val connection = URL(url).openConnection() as HttpURLConnection
+            try {
+                connection.connectTimeout = 8_000
+                connection.readTimeout = 8_000
+                connection.setRequestProperty("User-Agent", "LiteDash car launcher")
+                val found = JSONArray(connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) })
+                for (i in 0 until found.length()) {
+                    val o = found.getJSONObject(i)
+                    val lat = o.optString("lat").toDoubleOrNull() ?: continue
+                    val lon = o.optString("lon").toDoubleOrNull() ?: continue
+                    if (near(lat, lon)) return lat to lon
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
+        // 3) Las que dio Gemini con la búsqueda de Google.
+        return hint
     }
 
     private const val RATE = 16_000
@@ -760,7 +825,7 @@ object Assistant {
         val system = "Eres el asistente de la pantalla de un carro (${MyCar.MODEL}) en Costa Rica. El conductor puede ir manejando y la respuesta se le lee en voz alta: " +
             "responde en español, claro, cálido y breve (dos a cuatro frases, salvo que pida detalle), en texto simple sin Markdown, asteriscos, listas ni tablas. " +
             "Busca en Google cuando haga falta información actual o de lugares. " +
-            "Si la respuesta trata de un lugar concreto al que se puede ir (restaurante, negocio, dirección, sitio turístico), termina con una última línea aparte que diga exactamente LUGAR: nombre del lugar, ciudad. Esa línea no se lee en voz alta. " +
+            "Si la respuesta trata de un lugar concreto al que se puede ir (restaurante, negocio, dirección, sitio turístico), termina con una última línea aparte que diga exactamente LUGAR: nombre del lugar, dirección, ciudad | latitud, longitud (las coordenadas del lugar según Google Maps, con 6 decimales). Esa línea no se lee en voz alta. " +
             "La hora de la pantalla es $now. $where"
         val contents = JSONArray()
         for ((mine, said) in history) contents.put(JSONObject().put("role", if (mine) "user" else "model").put("parts", JSONArray().put(part(said))))
@@ -1271,7 +1336,7 @@ private fun Bubble(m: Assistant.Message) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Icon(Icons.navigate, Color.Black, 26.dp)
-                        Label("Ir con Waze: $place", Typography.body.copy(fontWeight = FontWeight.Medium), Color.Black, 1)
+                        Label("Ir con Waze: ${Assistant.placeName(place)}", Typography.body.copy(fontWeight = FontWeight.Medium), Color.Black, 1)
                     }
                 }
                 for (link in m.links) {
