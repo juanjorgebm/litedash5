@@ -85,7 +85,42 @@ import java.util.Locale
  * así que se graba el audio (WAV de 16 kHz) y Gemini lo entiende directo. La clave se guarda solo en la pantalla.
  */
 object Assistant {
-    class Message(val mine: Boolean, val text: String, val error: Boolean = false, val image: ImageBitmap? = null, val file: String? = null)
+    class Message(
+        val mine: Boolean,
+        val text: String,
+        val error: Boolean = false,
+        val image: ImageBitmap? = null,
+        val file: String? = null,
+        val links: List<Link> = emptyList(),
+        val place: String? = null,
+    )
+
+    /** Una página de donde Gemini sacó la respuesta (búsqueda de Google). */
+    class Link(val title: String, val url: String)
+
+    /** La respuesta sin la línea "LUGAR: …" (que no se muestra ni se lee) y el lugar, si lo trae. */
+    fun splitPlace(text: String): Pair<String, String?> {
+        val at = text.indexOf("LUGAR:")
+        if (at < 0) return text to null
+        val place = text.substring(at + 6).lineSequence().firstOrNull()?.trim()?.trim('.', '"')?.takeIf { it.length > 2 }
+        return text.substring(0, at).trimEnd() to place
+    }
+
+    /** Abre una página o Waze; si la pantalla no tiene con qué abrirlo, lo dice. */
+    fun open(context: Context, url: String) {
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }.onFailure {
+            android.widget.Toast.makeText(context, "No hay una app para abrir esto en la pantalla", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Lleva a un lugar con Waze (la app vieja entiende waze://; si no, la dirección web de Waze). */
+    fun navigate(context: Context, place: String) {
+        val q = java.net.URLEncoder.encode(place, "UTF-8").replace("+", "%20")
+        val app = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("waze://?q=$q&navigate=yes")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (runCatching { context.startActivity(app) }.isSuccess) return
+        open(context, "https://waze.com/ul?q=$q&navigate=yes")
+    }
 
     private const val RATE = 16_000
     private const val MAX_SECONDS = 45
@@ -272,7 +307,13 @@ object Assistant {
         val kept = messages.filter { it.text.isNotBlank() || it.file != null }
         if (kept.none { it.mine }) return
         val list = JSONArray()
-        for (m in kept) list.put(JSONObject().put("mine", m.mine).put("text", m.text).put("error", m.error).apply { m.file?.let { put("file", it) } })
+        for (m in kept) list.put(
+            JSONObject().put("mine", m.mine).put("text", m.text).put("error", m.error).apply {
+                m.file?.let { put("file", it) }
+                m.place?.let { put("place", it) }
+                if (m.links.isNotEmpty()) put("links", JSONArray().apply { m.links.forEach { put(JSONObject().put("title", it.title).put("url", it.url)) } })
+            },
+        )
         val title = kept.first { it.mine }.text.replace('\n', ' ').take(80)
         val now = System.currentTimeMillis()
         val id = chatId
@@ -293,7 +334,9 @@ object Assistant {
             val m = list.optJSONObject(i) ?: continue
             val file = m.optString("file").ifEmpty { null }
             val picture = file?.let { name -> runCatching { File(d, name).readBytes() }.getOrNull()?.let(::decode) }
-            messages += Message(m.optBoolean("mine"), m.optString("text"), m.optBoolean("error"), picture, file)
+            val links = ArrayList<Link>()
+            m.optJSONArray("links")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { links += Link(it.optString("title"), it.optString("url")) } }
+            messages += Message(m.optBoolean("mine"), m.optString("text"), m.optBoolean("error"), picture, file, links, m.optString("place").ifEmpty { null })
         }
         chatId = chat.id
     }
@@ -614,10 +657,11 @@ object Assistant {
                 val talk = if (speakAnswer) Talk(clean) else null
                 Thread {
                     val built = StringBuilder()
+                    var links: List<Link> = emptyList()
                     val result = runCatching {
-                        answer(clean, history, heard, where) { delta ->
+                        answer(clean, history, heard, where, { links = it }) { delta ->
                             built.append(delta)
-                            val shown = built.toString()
+                            val shown = splitPlace(built.toString()).first
                             main.post {
                                 if (slot < messages.size) messages[slot] = Message(false, shown)
                                 talk?.progress(shown)
@@ -626,11 +670,11 @@ object Assistant {
                     }
                     main.post {
                         busy = false
-                        val final = built.toString().trim()
+                        val (final, place) = splitPlace(built.toString().trim())
                         if (slot >= messages.size) return@post
                         when {
                             final.isNotEmpty() -> {
-                                messages[slot] = Message(false, final)
+                                messages[slot] = Message(false, final, links = links, place = place)
                                 saveChat()
                                 talk?.finish(final)
                             }
@@ -685,20 +729,44 @@ object Assistant {
     }
 
     /** La respuesta, que llega en pedazos por [onText] mientras Gemini la escribe. */
-    private fun answer(key: String, history: List<Pair<Boolean, String>>, question: String, where: String, onText: (String) -> Unit) {
+    private fun answer(key: String, history: List<Pair<Boolean, String>>, question: String, where: String, onLinks: (List<Link>) -> Unit, onText: (String) -> Unit) {
         val now = SimpleDateFormat("EEEE d 'de' MMMM 'de' yyyy, HH:mm", Locale.forLanguageTag("es-CR")).format(Date())
         val system = "Eres el asistente de la pantalla de un carro (${MyCar.MODEL}) en Costa Rica. El conductor puede ir manejando y la respuesta se le lee en voz alta: " +
             "responde en español, claro, cálido y breve (dos a cuatro frases, salvo que pida detalle), en texto simple sin Markdown, asteriscos, listas ni tablas. " +
+            "Busca en Google cuando haga falta información actual o de lugares. " +
+            "Si la respuesta trata de un lugar concreto al que se puede ir (restaurante, negocio, dirección, sitio turístico), termina con una última línea aparte que diga exactamente LUGAR: nombre del lugar, ciudad. Esa línea no se lee en voz alta. " +
             "La hora de la pantalla es $now. $where"
         val contents = JSONArray()
         for ((mine, said) in history) contents.put(JSONObject().put("role", if (mine) "user" else "model").put("parts", JSONArray().put(part(said))))
         contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(part(question))))
-        call(key, "respuesta", ranked(key, "respuesta", ANSWER_MODELS), { model ->
+        var wrote = false
+        val found = LinkedHashMap<String, Link>()
+        fun ask(search: Boolean) = call(key, "respuesta", ranked(key, "respuesta", ANSWER_MODELS), { model ->
             JSONObject()
                 .put("system_instruction", JSONObject().put("parts", JSONArray().put(part(system))))
                 .put("contents", contents)
                 .put("generationConfig", quick(model))
-        }, stream = true, readMs = 30_000) { json -> textOf(json).takeIf { it.isNotEmpty() }?.let(onText) }
+                .apply { if (search) put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject()))) }
+        }, stream = true, readMs = 30_000) { json ->
+            textOf(json).takeIf { it.isNotEmpty() }?.let { wrote = true; onText(it) }
+            // Las páginas de donde salió (vienen en el último pedazo).
+            val chunks = json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("groundingMetadata")?.optJSONArray("groundingChunks")
+            if (chunks != null) {
+                for (i in 0 until chunks.length()) {
+                    val web = chunks.optJSONObject(i)?.optJSONObject("web") ?: continue
+                    val url = web.optString("uri")
+                    if (url.startsWith("http")) found.getOrPut(url) { Link(web.optString("title").ifBlank { url }, url) }
+                }
+                onLinks(found.values.take(5))
+            }
+        }
+        try {
+            ask(search = true)
+        } catch (e: IllegalStateException) {
+            // Si la búsqueda no se puede (cupo o modelo), se contesta sin ella.
+            if (wrote) throw e
+            ask(search = false)
+        }
     }
 
     /**
@@ -1168,6 +1236,29 @@ private fun Bubble(m: Assistant.Message) {
                     else -> c.text
                 },
             )
+            if (m.place != null || m.links.isNotEmpty()) {
+                val context = LocalContext.current
+                m.place?.let { place ->
+                    Row(
+                        Modifier.clip(RoundedCornerShape(24.dp)).background(Color(0xFF33CCFF)).clickable { Assistant.navigate(context, place) }.padding(horizontal = 18.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.navigate, Color.Black, 26.dp)
+                        Label("Ir con Waze: $place", Typography.body.copy(fontWeight = FontWeight.Medium), Color.Black, 1)
+                    }
+                }
+                for (link in m.links) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).clickable { Assistant.open(context, link.url) }.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.chevron, c.accent, 22.dp)
+                        Label(link.title, Typography.body, c.accent, 1)
+                    }
+                }
+            }
             }
         }
     }
