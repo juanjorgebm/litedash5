@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +84,21 @@ object PhotoAlbum {
         private set
 
     private fun prefs(context: Context) = context.getSharedPreferences("photos", Context.MODE_PRIVATE)
+
+    /** Cuánto se queda cada foto, en segundos (lo elige el usuario). */
+    val CHOICES = listOf(10, 30, 60, 120, 300, 600)
+    var seconds by mutableIntStateOf(0)
+        private set
+
+    fun seconds(context: Context): Int {
+        if (seconds == 0) seconds = prefs(context).getInt("seconds", 60)
+        return seconds
+    }
+
+    fun setSeconds(context: Context, value: Int) {
+        seconds = value
+        prefs(context).edit().putInt("seconds", value).apply()
+    }
     private fun dir(context: Context) = File(context.filesDir, "album").apply { mkdirs() }
 
     fun link(context: Context): String = prefs(context).getString("link", "").orEmpty()
@@ -229,18 +245,24 @@ object PhotoAlbum {
 
 /** Va pasando las [files] en desorden, con un fundido entre una y otra. */
 @Composable
-private fun Slideshow(files: List<File>, seconds: Int, maxSide: Int, scale: ContentScale, modifier: Modifier = Modifier) {
+private fun Slideshow(files: List<File>, maxSide: Int, scale: ContentScale, modifier: Modifier = Modifier) {
     var shown by remember { mutableStateOf<ImageBitmap?>(null) }
     val fade = remember { Animatable(0f) }
-    LaunchedEffect(files) {
+    val context = LocalContext.current
+    // Mientras se bajan fotos la lista cambia a cada rato: no por eso se pasa a la siguiente antes de tiempo.
+    val current by rememberUpdatedState(files)
+    LaunchedEffect(files.isEmpty()) {
         if (files.isEmpty()) { shown = null; return@LaunchedEffect }
         while (true) {
-            for (file in files.shuffled()) {
+            for (file in current.shuffled()) {
+                if (!file.isFile) continue
                 val next = withContext(Dispatchers.IO) { PhotoAlbum.decode(file, maxSide) } ?: continue
                 if (shown != null) fade.animateTo(0f, tween(450))
                 shown = next
                 fade.animateTo(1f, tween(650))
-                delay(seconds * 1000L)
+                // Se revisa cada segundo: si cambian el tiempo en el ajuste, vale de una vez.
+                var waited = 0
+                while (waited < PhotoAlbum.seconds(context)) { delay(1_000); waited++ }
             }
             // Si ninguna abrió (la USB se quitó), no dar vueltas sin parar.
             if (shown == null) delay(5_000)
@@ -267,7 +289,7 @@ fun PhotosTile(onOpen: () -> Unit) {
                 if (PhotoAlbum.syncing || PhotoAlbum.status.isNotEmpty()) PhotoAlbum.status else stringResource(R.string.photos_empty),
                 Typography.small.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), c.textMuted, 4,
             )
-        } else Slideshow(files, 12, 900, ContentScale.Crop, Modifier.fillMaxSize().clip(RoundedCornerShape(Radius.card)))
+        } else Slideshow(files, 900, ContentScale.Crop, Modifier.fillMaxSize().clip(RoundedCornerShape(Radius.card)))
     }
 }
 
@@ -297,11 +319,21 @@ fun PhotosScreen(close: () -> Unit) {
                 if (files.isNotEmpty()) Button(stringResource(R.string.photos_view, files.size), { setup = false })
             }
             if (PhotoAlbum.status.isNotEmpty()) Label(PhotoAlbum.status, Typography.body, c.accent, 4, Modifier.padding(top = 12.dp))
+            Spacer(Modifier.height(18.dp))
+            Label(stringResource(R.string.photos_time), Typography.subtitle, c.text)
+            Spacer(Modifier.height(10.dp))
+            val chosen = PhotoAlbum.seconds(context)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                for (option in PhotoAlbum.CHOICES) {
+                    val text = if (option < 60) stringResource(R.string.photos_seconds, option) else stringResource(R.string.photos_minutes, option / 60)
+                    Button(text, { PhotoAlbum.setSeconds(context, option) }, primary = option == chosen)
+                }
+            }
         }
         return
     }
     Box(Modifier.fillMaxSize().background(Color.Black).clickable(remember { MutableInteractionSource() }, indication = null, onClick = close)) {
-        Slideshow(files, 15, 1920, ContentScale.Fit, Modifier.fillMaxSize())
+        Slideshow(files, 1920, ContentScale.Fit, Modifier.fillMaxSize())
         IconButton(Icons.settings, { setup = true }, Modifier.align(Alignment.TopEnd).padding(16.dp).alpha(0.55f), background = Color(0x66000000), color = Color.White)
     }
 }

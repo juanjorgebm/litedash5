@@ -841,6 +841,9 @@
     <string name="photos_syncing">Bajando…</string>
     <string name="photos_link_file">Leer de la USB</string>
     <string name="photos_view">Ver las %1$d fotos</string>
+    <string name="photos_time">Cuánto dura cada foto</string>
+    <string name="photos_seconds">%1$d s</string>
+    <string name="photos_minutes">%1$d min</string>
     <string name="assistant_hearing">Escribiendo lo que dijiste…</string>
     <string name="assistant_speaking">Leyendo la respuesta…</string>
     <string name="crash_note">LiteDash se reinició por un error: %1$s</string>

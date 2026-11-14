@@ -820,6 +820,9 @@
     <string name="photos_syncing">Downloading…</string>
     <string name="photos_link_file">Read from USB</string>
     <string name="photos_view">View the %1$d photos</string>
+    <string name="photos_time">How long each photo stays</string>
+    <string name="photos_seconds">%1$d s</string>
+    <string name="photos_minutes">%1$d min</string>
     <string name="assistant_hearing">Writing down what you said…</string>
     <string name="assistant_speaking">Reading the answer…</string>
     <string name="crash_note">LiteDash restarted after an error: %1$s</string>
