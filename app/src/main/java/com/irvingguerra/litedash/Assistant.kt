@@ -118,6 +118,95 @@ object Assistant {
 
     @Volatile private var stopAsked = false
     @Volatile private var cancelled = false
+    /** Un modelo de Gemini que la clave puede usar. */
+    class Model(val id: String, val label: String)
+
+    /** Los modelos que permite la clave (los pide a Google); null mientras no se sabe. */
+    var models by mutableStateOf<List<Model>?>(null)
+        private set
+    var modelsNote by mutableStateOf("")
+        private set
+
+    /** El modelo que eligió el usuario; null = automático (el mejor gratis que tenga la clave). */
+    @Volatile var chosen: String? = null
+
+    /** Pide a Google la lista de modelos de la clave (en otro hilo). */
+    fun loadModels(key: String) {
+        if (key.isBlank()) return
+        modelsNote = ""
+        Thread {
+            val result = runCatching { fetchModels(key.trim()) }
+            main.post {
+                result.getOrNull()?.let { models = it }
+                modelsNote = result.exceptionOrNull()?.let { "No se pudo leer la lista de modelos: ${it.message}" }.orEmpty()
+            }
+        }.start()
+    }
+
+    private fun fetchModels(key: String): List<Model> {
+        val connection = URL(HOST.trimEnd('/') + "?pageSize=1000").openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 20_000
+            connection.setRequestProperty("x-goog-api-key", key)
+            val code = connection.responseCode
+            val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+            check(code in 200..299) { runCatching { JSONObject(raw).optJSONObject("error")?.optString("message") }.getOrNull()?.take(140) ?: "código $code" }
+            val list = JSONObject(raw).optJSONArray("models") ?: JSONArray()
+            val out = ArrayList<Model>()
+            for (i in 0 until list.length()) {
+                val m = list.optJSONObject(i) ?: continue
+                val methods = m.optJSONArray("supportedGenerationMethods")?.toString().orEmpty()
+                if ("generateContent" !in methods) continue
+                val id = m.optString("name").removePrefix("models/")
+                if (!id.startsWith("gemini")) continue
+                out += Model(id, m.optString("displayName").ifBlank { id })
+            }
+            return out
+        }  finally {
+            connection.disconnect()
+        }
+    }
+
+    /** Ni voz, ni imágenes, ni video en vivo: los que contestan con texto. */
+    private fun textModel(id: String) = listOf("tts", "image", "embedding", "live", "native-audio", "computer-use", "robotics", "aqa").none { it in id }
+
+    /** Versión del modelo (2.5, 3…) para preferir el más nuevo; los "latest" siguen al más nuevo. */
+    private fun version(id: String): Double =
+        if ("latest" in id) 99.0 else Regex("gemini-(\\d+(?:\\.\\d+)?)").find(id)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+
+    /**
+     * En qué orden probar modelos para [task]: el elegido, el que ya funcionó, y después los que la clave tiene (los
+     * livianos para escribir lo que se dijo; "flash" para contestar; "pro" al final porque su cupo gratis es mínimo).
+     */
+    private fun ranked(key: String, task: String, defaults: List<String>): List<String> {
+        if (models == null) runCatching { fetchModels(key) }.getOrNull()?.let { list -> main.post { models = list }; known = list }
+        val have = (models ?: known)?.map { it.id }
+        val voice = task == "voz"
+        val pool = when {
+            have == null -> defaults
+            voice -> have.filter { "tts" in it }.ifEmpty { defaults }
+            else -> have.filter { textModel(it) && "preview" !in it || it == chosen }.ifEmpty { have.filter(::textModel) }
+        }
+        fun rank(id: String): Double {
+            val lite = "lite" in id
+            val pro = "pro" in id
+            val kind = when {
+                pro -> 0.0
+                task == "texto" && lite -> 3.0
+                task == "texto" -> 2.0
+                lite -> 2.0
+                else -> 3.0
+            }
+            return kind * 1000 + version(id)
+        }
+        val sorted = pool.sortedByDescending(::rank)
+        val first = listOfNotNull(chosen?.takeIf { !voice }, working[task])
+        return (first + sorted).distinct().take(5)
+    }
+
+    @Volatile private var known: List<Model>? = null
+
     /** El modelo que contestó la última vez, por tarea: se prueba primero. */
     private val working = HashMap<String, String>()
     private var tts: TextToSpeech? = null
@@ -173,7 +262,7 @@ object Assistant {
                         ),
                     )
                 var audio: ByteArray? = null
-                call(key, "voz", VOICE_MODELS, { body }, stream = false, readMs = 40_000) { json ->
+                call(key, "voz", ranked(key, "voz", VOICE_MODELS), { body }, stream = false, readMs = 40_000) { json ->
                     val parts = json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                     if (parts != null) for (i in 0 until parts.length()) {
                         val data = parts.optJSONObject(i)?.optJSONObject("inlineData")?.optString("data").orEmpty()
@@ -386,7 +475,7 @@ object Assistant {
     private fun transcribe(key: String, audio: ByteArray): String {
         val wav = Base64.encodeToString(wav(audio), Base64.NO_WRAP)
         var heard = ""
-        call(key, "texto", TRANSCRIBE_MODELS, { model ->
+        call(key, "texto", ranked(key, "texto", TRANSCRIBE_MODELS), { model ->
             JSONObject()
                 .put(
                     "contents",
@@ -413,7 +502,7 @@ object Assistant {
         val contents = JSONArray()
         for ((mine, said) in history) contents.put(JSONObject().put("role", if (mine) "user" else "model").put("parts", JSONArray().put(part(said))))
         contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(part(question))))
-        call(key, "respuesta", ANSWER_MODELS, { model ->
+        call(key, "respuesta", ranked(key, "respuesta", ANSWER_MODELS), { model ->
             JSONObject()
                 .put("system_instruction", JSONObject().put("parts", JSONArray().put(part(system))))
                 .put("contents", contents)
@@ -437,8 +526,9 @@ object Assistant {
      */
     private fun call(key: String, task: String, models: List<String>, body: (String) -> JSONObject, stream: Boolean, readMs: Int, onJson: (JSONObject) -> Unit) {
         var last = "Sin respuesta"
-        val order = listOfNotNull(working[task]) + models.filter { it != working[task] }
-        for (name in order) {
+        // Qué pasó con cada modelo probado, para que el error diga todo y no solo el último.
+        val tried = ArrayList<String>()
+        for (name in models) {
             val action = if (stream) "streamGenerateContent?alt=sse" else "generateContent"
             val bytes = body(name).toString().toByteArray(Charsets.UTF_8)
             val connection = URL("$HOST$name:$action").openConnection() as HttpURLConnection
@@ -479,6 +569,11 @@ object Assistant {
                     429 -> "Se acabaron las preguntas gratis por ahora (límite de Gemini). Prueba en un rato. $detail"
                     else -> "Gemini respondió $code. $detail"
                 }
+                tried += "$name: " + when (code) {
+                    404 -> "no está para esta clave"
+                    429 -> "se acabó su cupo gratis por ahora"
+                    else -> "error $code"
+                }
                 // Con otro modelo puede ir: no existe, está saturado o ese ya gastó su cupo gratis.
                 if (code == 400 && !detail.contains("model", ignoreCase = true)) error(last)
                 if (code == 401 || code == 403) error(last)
@@ -488,10 +583,12 @@ object Assistant {
                 last = if (e is java.net.SocketTimeoutException) "Gemini tardó demasiado en contestar; intenta de nuevo." else "Sin conexión con Gemini: ${e.javaClass.simpleName} ${e.message.orEmpty().take(100)}"
                 // Si ya estaba escribiendo la respuesta, no se empieza otra con otro modelo.
                 if (started) error(last)
+                tried += "$name: " + if (e is java.net.SocketTimeoutException) "tardó demasiado" else "sin conexión"
             } finally {
                 connection.disconnect()
             }
         }
+        if (tried.size > 1) error("Ningún modelo contestó. Toca «Modelo» para elegir otro.\n" + tried.joinToString("\n"))
         error(last)
     }
 
@@ -542,6 +639,9 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
     var draft by remember { mutableStateOf(key) }
     var note by remember { mutableStateOf("") }
     var typed by remember { mutableStateOf("") }
+    var picking by remember { mutableStateOf(false) }
+    Assistant.chosen = prefs.assistantModel
+    LaunchedEffect(key) { if (key.isNotBlank() && Assistant.models == null) Assistant.loadModels(key) }
     val position = d.trip.position
     val where = if (position != null) "El carro está cerca de la latitud ${position.latitude} y longitud ${position.longitude}." else "El carro suele estar en ${MyCar.PLACE}."
 
@@ -575,6 +675,7 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
                         if (!prefs.assistantSpeak) Assistant.quiet()
                     })
                     if (Assistant.messages.isNotEmpty()) Button(stringResource(R.string.assistant_clear), { Assistant.clear() })
+                    Button(stringResource(R.string.assistant_model), { picking = !picking; if (Assistant.models == null) Assistant.loadModels(prefs.assistantKey.orEmpty()) }, primary = picking)
                     Button(stringResource(R.string.assistant_key), { Assistant.cancel(); draft = prefs.assistantKey.orEmpty(); note = ""; editing = true })
                 }
             }
@@ -587,7 +688,7 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(stringResource(R.string.assistant_key_save), {
-                    if (draft.length >= 20) { prefs.assistantKey = draft; editing = false; note = "" } else note = context.getString(R.string.assistant_key_short)
+                    if (draft.length >= 20) { prefs.assistantKey = draft; editing = false; note = ""; Assistant.loadModels(draft) } else note = context.getString(R.string.assistant_key_short)
                 }, primary = true)
                 Button(stringResource(R.string.assistant_key_file), {
                     val found = runCatching { Assistant.keyFromFile() }.getOrNull()
@@ -596,6 +697,14 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
                 if (prefs.assistantKey.orEmpty().isNotBlank()) Button(stringResource(R.string.assistant_key_cancel), { editing = false; note = "" })
             }
             if (note.isNotEmpty()) Label(note, Typography.body, c.accent, 3, Modifier.padding(top = 12.dp))
+            return@PanelScaffold
+        }
+        if (picking) {
+            ModelPicker(prefs.assistantModel) { id ->
+                prefs.assistantModel = id
+                Assistant.chosen = id
+                picking = false
+            }
             return@PanelScaffold
         }
         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -650,6 +759,44 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
                 }
             }, primary = true)
         }
+    }
+}
+
+/** Elegir el modelo: automático o uno de los que permite la clave (con lo que conviene de cada tipo). */
+@Composable
+private fun ModelPicker(current: String?, pick: (String?) -> Unit) {
+    val c = LocalColors.current
+    val list = Assistant.models
+    Label(stringResource(R.string.assistant_model_help), Typography.body, c.textMuted, 4)
+    Spacer(Modifier.height(10.dp))
+    if (list == null) {
+        Label(Assistant.modelsNote.ifEmpty { stringResource(R.string.places_loading) }, Typography.body, c.textMuted, 3)
+        return
+    }
+    val shown = list.filter { m -> listOf("tts", "image", "embedding", "live", "native-audio", "computer-use", "robotics", "aqa").none { it in m.id } }
+        .sortedWith(compareBy<Assistant.Model>({ "pro" in it.id }, { "lite" !in it.id }).thenByDescending { it.id })
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { ModelRow(stringResource(R.string.assistant_model_auto), stringResource(R.string.assistant_model_auto_help), current == null) { pick(null) } }
+        items(shown) { m ->
+            val hint = when {
+                "pro" in m.id -> R.string.assistant_model_pro
+                "lite" in m.id -> R.string.assistant_model_lite
+                else -> R.string.assistant_model_flash
+            }
+            ModelRow(m.label, m.id + " · " + stringResource(hint), current == m.id) { pick(m.id) }
+        }
+    }
+}
+
+@Composable
+private fun ModelRow(title: String, detail: String, selected: Boolean, onClick: () -> Unit) {
+    val c = LocalColors.current
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (selected) c.primary else c.surface).clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+    ) {
+        Label(title, Typography.subtitle, if (selected) c.onPrimary else c.text, 1)
+        Label(detail, Typography.small, if (selected) c.onPrimary else c.textMuted, 2)
     }
 }
 

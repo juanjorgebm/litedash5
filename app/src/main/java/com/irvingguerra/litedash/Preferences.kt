@@ -32,6 +32,7 @@ internal object PrefKeys {
     const val CAR_NAME = "car_name"
     const val ASSISTANT_KEY = "assistant_key"
     const val ASSISTANT_SPEAK = "assistant_speak"
+    const val ASSISTANT_MODEL = "assistant_model"
     const val CAR_COLOR = "car_color_argb"
     const val CAR_FINISH = "car_finish"
     const val CAR_GLOSS = "car_gloss"
@@ -204,6 +205,9 @@ class Preferences(context: Context) {
 
     /** Leer en voz alta las respuestas del asistente, si la pantalla tiene voz. */
     var assistantSpeak by bool(PrefKeys.ASSISTANT_SPEAK, true)
+
+    /** El modelo de Gemini que eligió el usuario; null = automático. */
+    var assistantModel by string(PrefKeys.ASSISTANT_MODEL)
 
     private var _carColor by mutableIntStateOf(p.getInt(PrefKeys.CAR_COLOR, CarColors[1].toArgb())) // blanco, como el Okavango
     var carColor: Color

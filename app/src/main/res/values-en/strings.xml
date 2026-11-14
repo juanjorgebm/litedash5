@@ -823,4 +823,11 @@
     <string name="assistant_hearing">Writing down what you said…</string>
     <string name="assistant_speaking">Reading the answer…</string>
     <string name="crash_note">LiteDash restarted after an error: %1$s</string>
+    <string name="assistant_model">Model</string>
+    <string name="assistant_model_help">These are the Gemini models your key allows. All have free use with a daily limit; if one runs out, the assistant tries another on its own.</string>
+    <string name="assistant_model_auto">Automatic (recommended)</string>
+    <string name="assistant_model_auto_help">Uses the best free model your key has and switches if one fails</string>
+    <string name="assistant_model_flash">fast and good, decent free quota</string>
+    <string name="assistant_model_lite">fastest, largest free quota</string>
+    <string name="assistant_model_pro">smartest, but slow with very few free questions</string>
 </resources>

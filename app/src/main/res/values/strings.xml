@@ -844,4 +844,11 @@
     <string name="assistant_hearing">Escribiendo lo que dijiste…</string>
     <string name="assistant_speaking">Leyendo la respuesta…</string>
     <string name="crash_note">LiteDash se reinició por un error: %1$s</string>
+    <string name="assistant_model">Modelo</string>
+    <string name="assistant_model_help">Estos son los modelos de Gemini que permite tu clave. Todos tienen uso gratis, con un límite de preguntas por día; si uno se acaba, el asistente prueba solo con otro.</string>
+    <string name="assistant_model_auto">Automático (recomendado)</string>
+    <string name="assistant_model_auto_help">Usa el mejor gratis que tenga tu clave y cambia solo si uno falla</string>
+    <string name="assistant_model_flash">rápido y bueno, buen cupo gratis</string>
+    <string name="assistant_model_lite">el más rápido, el cupo gratis más grande</string>
+    <string name="assistant_model_pro">el más inteligente, pero lento y con muy pocas preguntas gratis</string>
 </resources>
