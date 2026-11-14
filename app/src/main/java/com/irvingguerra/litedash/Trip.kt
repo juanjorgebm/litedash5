@@ -43,6 +43,7 @@ import com.irvingguerra.litedash.core.vehicle.Signal
 import com.irvingguerra.litedash.core.vehicle.Source
 import com.irvingguerra.litedash.core.vehicle.VehicleBus
 import kotlinx.coroutines.delay
+import androidx.core.content.ContextCompat
 
 /** Un punto del GPS de hace menos que esto manda sobre la red. */
 private const val GPS_FRESH_MS = 5_000L
@@ -69,12 +70,12 @@ class TripRepository(private val context: Context, private val bus: VehicleBus) 
 
     private var users = 0
     private var last: Location? = null
-    private val manager by lazy { context.getSystemService(LocationManager::class.java) }
+    private val manager by lazy { ContextCompat.getSystemService(context, LocationManager::class.java)!! }
     // Compat: en Android 6–10 LocationListener tiene más métodos abstractos que el lambda no
     // implementa (AbstractMethodError al perder el GPS o apagar la ubicación).
     private val listener = LocationListenerCompat { update(it) }
 
-    private fun granted(permission: String) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    private fun granted(permission: String) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     /** Ubicación precisa o aproximada (en Android 12+ el usuario puede dar solo la aproximada). */
     fun hasPermission() = granted(Manifest.permission.ACCESS_FINE_LOCATION) || granted(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -107,6 +108,8 @@ class TripRepository(private val context: Context, private val bus: VehicleBus) 
         }
     }
 
+    // Android 5 pide el permiso también para dejar de escuchar; si no lo hay, no se escuchaba y runCatching lo cubre.
+    @SuppressLint("MissingPermission")
     fun release() {
         users = (users - 1).coerceAtLeast(0)
         if (users == 0) {

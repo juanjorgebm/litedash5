@@ -127,13 +127,13 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
     private var reconnects = 0
 
     fun hasPermission() = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-        context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
     /** Adaptadores emparejados en Ajustes de Android; los que parecen OBD primero. */
     @SuppressLint("MissingPermission")
     fun pairedDevices(): List<ObdTarget.Bluetooth> {
         if (!hasPermission()) return emptyList()
-        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return emptyList()
+        val adapter = ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter ?: return emptyList()
         return runCatching { adapter.bondedDevices.orEmpty() }.getOrDefault(emptySet())
             .map { ObdTarget.Bluetooth(it.address, it.name ?: it.address) }
             .sortedByDescending { looksLikeObd(it.name) }
@@ -158,14 +158,14 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
     fun scanPermission(): String =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Manifest.permission.BLUETOOTH_SCAN else Manifest.permission.ACCESS_FINE_LOCATION
 
-    fun canScan() = context.checkSelfPermission(scanPermission()) == PackageManager.PERMISSION_GRANTED
+    fun canScan() = ContextCompat.checkSelfPermission(context, scanPermission()) == PackageManager.PERMISSION_GRANTED
 
     /** Busca adaptadores Bluetooth LE unos segundos; solo cuando el usuario lo pide. */
     @SuppressLint("MissingPermission")
     fun scanBle() {
         if (scanning || !canScan()) return
         scanProblem = null
-        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+        val adapter = ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter
         val scanner = adapter?.takeIf { it.isEnabled }?.bluetoothLeScanner
             ?: return run { scanProblem = ScanProblem.BLUETOOTH_OFF }
         // Antes de Android 12 la búsqueda no regresa nada con la ubicación apagada.
@@ -204,7 +204,7 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
 
     /** Cables USB conectados a la pantalla (cualquier puerto serie; el que parezca OBD primero). */
     fun usbDevices(): List<ObdTarget.Usb> {
-        val manager = context.getSystemService(UsbManager::class.java) ?: return emptyList()
+        val manager = ContextCompat.getSystemService(context, UsbManager::class.java) ?: return emptyList()
         return manager.deviceList.values
             .map { ObdTarget.Usb(it.vendorId, it.productId, usbName(it)) }
             .sortedByDescending { looksLikeObd(it.name) }
@@ -214,7 +214,7 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
         d.productName?.takeIf { it.isNotBlank() } ?: "USB %04X:%04X".format(d.vendorId, d.productId)
 
     private fun usbDevice(t: ObdTarget.Usb): UsbDevice? =
-        context.getSystemService(UsbManager::class.java)?.deviceList?.values
+        ContextCompat.getSystemService(context, UsbManager::class.java)?.deviceList?.values
             ?.firstOrNull { it.vendorId == t.vendorId && it.productId == t.productId }
 
     /**
@@ -222,7 +222,7 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
      * darlo, se conecta solo. Mientras, [state] queda en CONNECTING.
      */
     fun connectUsb(t: ObdTarget.Usb) {
-        val manager = context.getSystemService(UsbManager::class.java)
+        val manager = ContextCompat.getSystemService(context, UsbManager::class.java)
         val device = usbDevice(t)
         if (manager == null || device == null) {
             error = "No está conectado el cable USB"
@@ -255,7 +255,7 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
 
     /** Ubicación del sistema encendida (por proveedor: funciona desde Android 8). */
     private fun locationOn(): Boolean {
-        val m = context.getSystemService(LocationManager::class.java) ?: return true
+        val m = ContextCompat.getSystemService(context, LocationManager::class.java) ?: return true
         return runCatching {
             m.isProviderEnabled(LocationManager.GPS_PROVIDER) || m.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         }.getOrDefault(true)
@@ -269,7 +269,7 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
         // dice que no está conectado.
         if (t is ObdTarget.Usb) {
             val device = usbDevice(t)
-            val manager = context.getSystemService(UsbManager::class.java)
+            val manager = ContextCompat.getSystemService(context, UsbManager::class.java)
             if (device != null && manager != null && !manager.hasPermission(device)) return connectUsb(t)
         }
         // Buscar y conectar a la vez hace fallar la conexión BLE en varios Android.
@@ -545,7 +545,7 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
      * ([USB_BAUDS]) hasta que el ELM327 conteste.
      */
     private suspend fun openUsb(t: ObdTarget.Usb): Triple<ElmLink, Elm327, String> {
-        val manager = context.getSystemService(UsbManager::class.java) ?: throw IOException("Esta pantalla no tiene USB")
+        val manager = ContextCompat.getSystemService(context, UsbManager::class.java) ?: throw IOException("Esta pantalla no tiene USB")
         val device = usbDevice(t) ?: throw IOException("No está conectado el cable USB")
         var last: Exception? = null
         for (baud in USB_BAUDS) {
@@ -563,7 +563,7 @@ class ObdRepository(private val context: Context, private val bus: VehicleBus) {
 
     private fun device(address: String): BluetoothDevice {
         if (!hasPermission()) throw SecurityException("Sin permiso de Bluetooth")
-        return context.getSystemService(BluetoothManager::class.java).adapter.getRemoteDevice(address)
+        return ContextCompat.getSystemService(context, BluetoothManager::class.java)!!.adapter.getRemoteDevice(address)
     }
 
     private fun closeLink() {

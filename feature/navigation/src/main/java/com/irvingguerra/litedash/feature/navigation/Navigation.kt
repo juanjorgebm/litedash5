@@ -1,5 +1,6 @@
 package com.irvingguerra.litedash.feature.navigation
 
+import android.os.Build
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.content.Context
@@ -81,6 +82,11 @@ class NavigationRepository(private val context: Context, private val packages: S
     }
 
     private fun arrow(n: Notification): Bitmap? = runCatching {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            // Android 5: el ícono grande es un Bitmap suelto (no hay Icon).
+            @Suppress("DEPRECATION")
+            return n.largeIcon
+        }
         val d = n.getLargeIcon()?.loadDrawable(context) ?: return null
         if (d is BitmapDrawable) return d.bitmap
         val side = (48 * context.resources.displayMetrics.density).toInt()

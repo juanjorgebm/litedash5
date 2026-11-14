@@ -18,6 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,7 @@ import com.irvingguerra.litedash.feature.music.label
 import com.irvingguerra.litedash.feature.player.Library
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.core.content.ContextCompat
 
 /**
  * Ajustes → Apps → Música → "Tu app de música": la que sale con su nombre junto a USB en la
@@ -63,6 +66,28 @@ fun MusicSettings(d: Dependencies) {
     }
     if (other) AppSearch(apps, chosen) { d.music.choose(it); other = false }
     Label(stringResource(R.string.music_help), Typography.small, LocalColors.current.textMuted)
+    // Diagnóstico en pantalla: qué ve LiteDash de la app de música (para arreglar controles que no responden).
+    var diagnostic by remember { mutableStateOf<String?>(null) }
+    var hints by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button("Diagnóstico de música", { diagnostic = if (diagnostic == null) d.music.diagnostic() else null }, primary = diagnostic != null)
+        Button("Investigar app del carro", {
+            if (hints != null) hints = null else {
+                hints = "Leyendo la app…"
+                scope.launch { hints = withContext(Dispatchers.IO) { d.music.apkHints() } }
+            }
+        }, primary = hints != null)
+    }
+    val context = LocalContext.current
+    var exported by remember { mutableStateOf<String?>(null) }
+    Button("Copiar apps del carro a Descargas", {
+        exported = "Copiando…"
+        scope.launch { exported = withContext(Dispatchers.IO) { exportCarApps(context) } }
+    })
+    exported?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
+    diagnostic?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
+    hints?.let { Label(it, Typography.small, LocalColors.current.textMuted) }
 }
 
 /**
@@ -172,7 +197,7 @@ fun rememberInternetRadioToggle(d: Dependencies): (Boolean) -> Unit {
 private fun BluetoothNamePermission() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
     val context = LocalContext.current
-    var granted by remember { mutableStateOf(context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) }
+    var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) }
     if (granted) return
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     Button(stringResource(R.string.bluetooth_name_permission), { ask.launch(Manifest.permission.BLUETOOTH_CONNECT) }, Modifier.padding(bottom = 6.dp))
@@ -207,4 +232,37 @@ fun MapSettings(d: Dependencies) {
         Typography.small,
         LocalColors.current.textMuted,
     )
+}
+
+/** Las apps de fábrica de Música, Radio y Teléfono del Okavango, para copiarlas y analizarlas. */
+private val CAR_APPS = listOf("com.neusoft.shockwave.Mutimedia", "com.neusoft.shockwave.radio", "bt.ecarxtestn.com.btphoneapp")
+
+/** Copia el APK de cada una a Descargas/litedash-apks; devuelve qué se pudo copiar. */
+@Suppress("DEPRECATION")
+private fun exportCarApps(context: android.content.Context): String {
+    val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "litedash-apks")
+    return runCatching {
+        dir.mkdirs()
+        val installed = context.packageManager.getInstalledApplications(0)
+        // Lista de las apps del carro (Neusoft, Geely, ECARX) para saber cuáles hay.
+        val carPackages = installed.map { it.packageName }.filter { Regex("(?i)(neusoft|geely|ecarx)").containsMatchIn(it) }.sorted()
+        runCatching { java.io.File(dir, "paquetes.txt").writeText(carPackages.joinToString("\n")) }
+        // Las de Bluetooth: ahí está cómo se enciende y se reconecta (no las de Android).
+        val bluetooth = installed.map { it.packageName }.filter {
+            it != "com.android.bluetooth" && Regex("(?i)(bluetooth|btphone|btlogic|\\.bt\\b|\\.bt\\.)").containsMatchIn(it)
+        }
+        buildString {
+            appendLine("Carpeta: ${dir.absolutePath}")
+            appendLine("paquetes.txt: ${carPackages.size} apps del carro")
+            for (pkg in (CAR_APPS + bluetooth).distinct()) {
+                val result = runCatching {
+                    val src = java.io.File(context.packageManager.getApplicationInfo(pkg, 0).sourceDir)
+                    val dst = java.io.File(dir, "$pkg.apk")
+                    src.inputStream().use { i -> dst.outputStream().use { o -> i.copyTo(o) } }
+                    "${dst.length() / 1024} KB"
+                }.getOrElse { "no se pudo (${it.javaClass.simpleName})" }
+                appendLine("  $pkg: $result")
+            }
+        }
+    }.getOrElse { "No se pudo crear la carpeta: ${it.javaClass.simpleName}" }
 }
