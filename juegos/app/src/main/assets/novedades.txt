@@ -1,5 +1,7 @@
 # Novedades de los Juegos. Cada versión empieza con "número|fecha".
 # La versión más nueva va arriba; su número es el versionCode del APK.
+6|14 nov 2026
+- Nuevo juego: Vuela Pío. Toca para aletear y pasa entre los troncos. Con 2 jugadores vuelan a la vez.
 5|14 nov 2026
 - Firma fija: desde esta versión las actualizaciones se instalan encima, sin desinstalar ni perder récords.
 4|14 nov 2026

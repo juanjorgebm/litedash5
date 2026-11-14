@@ -28,7 +28,9 @@ enum class GameId(val title: String, val desc: String) {
     CORRE("Corre Coco",
         "Coco corre solo: toca la pantalla para saltar.\nMantén el dedo para saltar más alto y toca otra vez\nen el aire para un doble salto. Junta monedas,\nsalta sobre los bichos y llega a la bandera."),
     AJEDREZ("Ajedrez",
-        "Toca una pieza para ver a dónde puede ir y toca la casilla.\nGana quien le haga jaque mate al rey del otro.\nJuega contra la app o con tu acompañante.\nEl botón de la flecha deshace la última jugada.");
+        "Toca una pieza para ver a dónde puede ir y toca la casilla.\nGana quien le haga jaque mate al rey del otro.\nJuega contra la app o con tu acompañante.\nEl botón de la flecha deshace la última jugada."),
+    VUELA("Vuela Pío",
+        "Toca la pantalla para que Pío aletee y pase\nentre los troncos sin chocar.\nCon 2 jugadores vuelan a la vez: cada uno toca\nsu mitad de la pantalla. Gana quien pase más troncos.");
 
     fun levels(players: Int): List<String> = when (this) {
         SOLITARIO -> listOf("Robar 1", "Robar 3")
@@ -41,6 +43,7 @@ enum class GameId(val title: String, val desc: String) {
         TRIVIA -> listOf("Todas", "Mate", "Español", "Ciencias", "Sociales")
         AHORCADO -> listOf("Fácil", "Normal", "Difícil")
         AJEDREZ -> if (players == 1) listOf("Fácil", "Normal", "Difícil") else emptyList()
+        VUELA -> listOf("Fácil", "Normal", "Difícil")
         CORRE -> listOf("Pradera", "Playa", "Volcán", "Nieve", "Nubes", "Castillo")
     }
 
@@ -64,6 +67,7 @@ enum class GameId(val title: String, val desc: String) {
         AHORCADO -> AhorcadoScreen(app, m)
         CORRE -> CorreScreen(app, m)
         AJEDREZ -> AjedrezScreen(app, m)
+        VUELA -> VuelaScreen(app, m)
     }
 }
 
@@ -146,6 +150,14 @@ object GameArt {
                 c.drawLine(cx + s * 0.12f, cy - s * 0.1f, cx + s * 0.12f, cy + s * 0.08f, w2)
                 c.drawLine(cx + s * 0.12f, cy - s * 0.04f, cx + s * 0.22f, cy + s * 0.04f, w2)
                 G.text(c, "_ A _ A", cx + s * 0.28f, cy + s * 0.32f, s * 0.13f, C.AMBER, font = Fonts.black)
+            }
+            GameId.VUELA -> {
+                val k = (sin(t / 300.0) * 0.5 + 0.5).toFloat()
+                for ((dx, gy) in listOf(-0.3f to -0.05f, 0.3f to 0.08f)) {
+                    G.rr(c, cx + s * (dx - 0.07f), cy - s * 0.45f, cx + s * (dx + 0.07f), cy + s * (gy - 0.16f), 0f, 0xFFA0683A.toInt())
+                    G.rr(c, cx + s * (dx - 0.07f), cy + s * (gy + 0.16f), cx + s * (dx + 0.07f), cy + s * 0.42f, 0f, 0xFFA0683A.toInt())
+                }
+                Pio.draw(c, cx, cy - s * 0.02f - k * s * 0.06f, s * 0.13f, 0, k, -10f + k * 20f, false)
             }
             GameId.AJEDREZ -> {
                 val sq = s * 0.2f
@@ -354,6 +366,7 @@ class RecordsScreen(app: MainActivity) : Screen(app) {
                 "Palabras adivinadas: ${Store.long("ahorcado_palabras")}",
                 "Racha actual: ${Store.long("ahorcado_racha_actual")}",
                 "Mejor racha: ${Store.long("ahorcado_racha")}")
+            GameId.VUELA -> (0..2).map { "${lv(g, it)}: " + (if (Store.has("vuela_$it")) "${Store.long("vuela_$it")} troncos" else "-") }
             GameId.AJEDREZ -> (0..2).map { "${lv(g, it)}: ${Store.long("ajedrez_v$it")} ganadas, ${Store.long("ajedrez_d$it")} perdidas" }
             GameId.CORRE -> {
                 fun b(i: Int) = "${lv(g, i)} " + (if (Store.has("corre_m$i")) "${Store.long("corre_m$i")}" else "-")

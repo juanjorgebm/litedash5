@@ -14,6 +14,7 @@ pensada para pantallas de 8 a 10 pulgadas en horizontal con Android 5.1 (API 22)
 - **Ahorcado** (teclado en pantalla; con dos jugadores se turnan 3 palabras cada uno)
 - **Corre Coco** (correr y saltar con un personaje propio; 6 mundos: Pradera, Playa, Volcán, Nieve, Nubes y Castillo; con dos jugadores corren el mismo camino por turnos)
 - **Ajedrez** (contra la app en fácil, normal o difícil, o entre dos; reglas completas con enroque, al paso y coronación)
+- **Vuela Pío** (toca para aletear entre los troncos; con dos jugadores vuelan a la vez, cada uno en su mitad de la pantalla)
 
 **Torneo**: dos jugadores eligen los juegos y cuántas vueltas; la app lleva el marcador,
 anuncia al ganador y guarda el historial. Si quedan empatados se juega un desempate de Reflejos.
