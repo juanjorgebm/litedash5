@@ -5,7 +5,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.os.Environment
 import android.os.Handler
@@ -60,7 +62,6 @@ import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
 import com.irvingguerra.litedash.core.ui.MyCar
-import com.irvingguerra.litedash.core.ui.Radius
 import com.irvingguerra.litedash.core.ui.TextInput
 import com.irvingguerra.litedash.core.ui.Typography
 import org.json.JSONArray
@@ -88,8 +89,16 @@ object Assistant {
     private const val QUIET_CHUNKS = 18
     private const val HOST = "https://generativelanguage.googleapis.com/v1beta/models/"
 
-    /** Se prueban en orden: el nombre "latest" sigue al modelo gratis vigente; los otros, por si no existe. */
-    private val MODELS = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash")
+    /**
+     * Se prueban en orden hasta que uno conteste (si no existe para la clave o ya gastó su cupo gratis, sigue el otro).
+     * Para escribir lo que se dijo va el más liviano, que contesta en un par de segundos.
+     */
+    private val TRANSCRIBE_MODELS = listOf("gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash")
+    private val ANSWER_MODELS = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite")
+
+    /** La voz de Gemini, para cuando la pantalla no trae voz propia (la del carro no tiene). */
+    private val VOICE_MODELS = listOf("gemini-2.5-flash-preview-tts", "gemini-2.5-flash-tts")
+    private const val VOICE_RATE = 24_000
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -109,8 +118,19 @@ object Assistant {
 
     @Volatile private var stopAsked = false
     @Volatile private var cancelled = false
-    private var model: String? = null
+    /** El modelo que contestó la última vez, por tarea: se prueba primero. */
+    private val working = HashMap<String, String>()
     private var tts: TextToSpeech? = null
+    @Volatile private var player: AudioTrack? = null
+    @Volatile private var speech = 0
+
+    /** Mientras Gemini escribe lo que se dijo (antes de la respuesta). */
+    var transcribing by mutableStateOf(false)
+        private set
+
+    /** Mientras se prepara o suena la voz de la respuesta. */
+    var speaking by mutableStateOf(false)
+        private set
 
     fun clear() {
         quiet()
@@ -131,14 +151,76 @@ object Assistant {
         }
     }
 
-    private fun speak(text: String) {
-        if (!canSpeak) return
-        runCatching { tts?.speak(text.take(3500), TextToSpeech.QUEUE_FLUSH, null, "litedash-asistente") }
+    /** Lee la respuesta: con la voz de la pantalla si tiene; si no, con la voz de Gemini (audio que se reproduce aquí). */
+    private fun speak(key: String, text: String) {
+        val clean = text.replace(Regex("[*#_`]"), "").trim()
+        if (clean.isEmpty()) return
+        if (canSpeak) {
+            runCatching { tts?.speak(clean.take(3500), TextToSpeech.QUEUE_FLUSH, null, "litedash-asistente") }
+            return
+        }
+        val turn = ++speech
+        speaking = true
+        Thread {
+            val result = runCatching {
+                val body = JSONObject()
+                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(part("Lee en voz alta, en español, con tono amable y natural: " + clean.take(1200))))))
+                    .put(
+                        "generationConfig",
+                        JSONObject().put("responseModalities", JSONArray().put("AUDIO")).put(
+                            "speechConfig",
+                            JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore"))),
+                        ),
+                    )
+                var audio: ByteArray? = null
+                call(key, "voz", VOICE_MODELS, { body }, stream = false, readMs = 40_000) { json ->
+                    val parts = json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                    if (parts != null) for (i in 0 until parts.length()) {
+                        val data = parts.optJSONObject(i)?.optJSONObject("inlineData")?.optString("data").orEmpty()
+                        if (data.isNotEmpty()) audio = Base64.decode(data, Base64.DEFAULT)
+                    }
+                }
+                val pcm = audio ?: error("Gemini no mandó audio")
+                if (turn != speech) return@runCatching
+                play(pcm, turn)
+            }
+            main.post {
+                if (turn == speech) speaking = false
+                result.exceptionOrNull()?.let { if (turn == speech) messages += Message(false, "No se pudo leer en voz alta: ${it.message}", error = true) }
+            }
+        }.start()
+    }
+
+    /** Reproduce audio PCM de 16 bits a 24 kHz (lo que manda la voz de Gemini) por el parlante de la música. */
+    @Suppress("DEPRECATION")
+    private fun play(pcm: ByteArray, turn: Int) {
+        val smallest = AudioTrack.getMinBufferSize(VOICE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val track = AudioTrack(AudioManager.STREAM_MUSIC, VOICE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(smallest, 16_384), AudioTrack.MODE_STREAM)
+        check(track.state == AudioTrack.STATE_INITIALIZED) { "la pantalla no dejó usar el parlante" }
+        player = track
+        try {
+            track.play()
+            var at = 0
+            while (at < pcm.size && turn == speech) {
+                val n = track.write(pcm, at, minOf(8192, pcm.size - at))
+                if (n <= 0) break
+                at += n
+            }
+            // Espera a que termine de sonar lo que quedó en el búfer.
+            if (turn == speech) Thread.sleep(400)
+        } finally {
+            runCatching { track.stop() }
+            runCatching { track.release() }
+            if (player === track) player = null
+        }
     }
 
     /** Calla la voz. */
     fun quiet() {
+        speech++
+        speaking = false
         runCatching { tts?.stop() }
+        runCatching { player?.pause(); player?.flush() }
     }
 
     /** Deja de grabar y manda lo grabado. */
@@ -230,31 +312,55 @@ object Assistant {
         send(key, null, text.trim(), speakAnswer, where)
     }
 
+    /**
+     * Primero se escribe en pantalla lo que se dijo (un modelo liviano, rápido) y enseguida se pide la respuesta, que
+     * va apareciendo mientras Gemini la escribe.
+     */
     private fun send(key: String, audio: ByteArray?, text: String?, speakAnswer: Boolean, where: String) {
         busy = true
-        val history = messages.filter { !it.error }.takeLast(12).map { it.mine to it.text }
+        val history = messages.filter { !it.error && it.text.isNotBlank() }.takeLast(12).map { it.mine to it.text }
         if (text != null) messages += Message(true, text)
+        else transcribing = true
         Thread {
-            val result = runCatching { request(key.trim(), history, audio, text, where) }
+            val clean = key.trim()
+            val question = if (text != null) Result.success(text) else runCatching { transcribe(clean, audio!!) }
+            val heard = question.getOrNull()?.trim().orEmpty()
             main.post {
-                busy = false
-                val reply = result.getOrNull()
-                if (reply == null) {
-                    if (audio != null) messages += Message(true, "(pregunta por voz)")
-                    messages += Message(false, result.exceptionOrNull()?.message ?: "Sin respuesta", error = true)
-                    return@post
+                transcribing = false
+                when {
+                    question.isFailure -> {
+                        messages += Message(true, "(pregunta por voz)")
+                        messages += Message(false, question.exceptionOrNull()?.message ?: "Sin respuesta", error = true)
+                    }
+                    heard.isEmpty() -> messages += Message(false, "No te entendí. Intenta de nuevo, más cerca del micrófono.", error = true)
+                    text == null -> messages += Message(true, heard)
                 }
-                var answer = reply.trim()
-                if (audio != null) {
-                    // Con audio se le pide que primero escriba lo que entendió, para verlo en pantalla.
-                    val first = answer.lineSequence().firstOrNull().orEmpty()
-                    val heard = if (first.startsWith("Tú:", ignoreCase = true)) first.substring(3).trim() else ""
-                    if (heard.isNotEmpty()) answer = answer.substringAfter('\n', "").trim()
-                    messages += Message(true, heard.ifEmpty { "(pregunta por voz)" })
-                }
-                if (answer.isEmpty()) answer = "No entendí la pregunta."
-                messages += Message(false, answer)
-                if (speakAnswer) speak(answer)
+                if (question.isFailure || heard.isEmpty()) { busy = false; return@post }
+                // La respuesta empieza vacía y se va llenando.
+                messages += Message(false, "")
+                val slot = messages.lastIndex
+                Thread {
+                    val built = StringBuilder()
+                    val result = runCatching {
+                        answer(clean, history, heard, where) { delta ->
+                            built.append(delta)
+                            val shown = built.toString()
+                            main.post { if (slot < messages.size) messages[slot] = Message(false, shown) }
+                        }
+                    }
+                    main.post {
+                        busy = false
+                        val final = built.toString().trim()
+                        if (slot >= messages.size) return@post
+                        when {
+                            final.isNotEmpty() -> {
+                                messages[slot] = Message(false, final)
+                                if (speakAnswer) speak(clean, final)
+                            }
+                            else -> messages[slot] = Message(false, result.exceptionOrNull()?.message ?: "Gemini contestó vacío; pregunta de nuevo.", error = true)
+                        }
+                    }
+                }.start()
             }
         }.start()
     }
@@ -272,56 +378,101 @@ object Assistant {
 
     private fun part(text: String) = JSONObject().put("text", text)
 
-    private fun request(key: String, history: List<Pair<Boolean, String>>, audio: ByteArray?, text: String?, where: String): String {
+    /** Sin "pensar" antes de contestar: en los modelos 2.5 eso es lo que hacía tardar tanto. */
+    private fun quick(model: String, config: JSONObject = JSONObject()): JSONObject =
+        if ("2.5" in model && "tts" !in model) config.put("thinkingConfig", JSONObject().put("thinkingBudget", 0)) else config
+
+    /** Lo que se dijo en el audio, escrito tal cual. */
+    private fun transcribe(key: String, audio: ByteArray): String {
+        val wav = Base64.encodeToString(wav(audio), Base64.NO_WRAP)
+        var heard = ""
+        call(key, "texto", TRANSCRIBE_MODELS, { model ->
+            JSONObject()
+                .put(
+                    "contents",
+                    JSONArray().put(
+                        JSONObject().put("role", "user").put(
+                            "parts",
+                            JSONArray()
+                                .put(JSONObject().put("inline_data", JSONObject().put("mime_type", "audio/wav").put("data", wav)))
+                                .put(part("Escribe exactamente lo que dice la persona en este audio (en español de Costa Rica), sin comillas ni nada más. Si no se oye ninguna palabra, no escribas nada.")),
+                        ),
+                    ),
+                )
+                .put("generationConfig", quick(model, JSONObject().put("temperature", 0)))
+        }, stream = false, readMs = 25_000) { json -> heard = textOf(json) }
+        return heard.trim().trim('"', '“', '”').trim()
+    }
+
+    /** La respuesta, que llega en pedazos por [onText] mientras Gemini la escribe. */
+    private fun answer(key: String, history: List<Pair<Boolean, String>>, question: String, where: String, onText: (String) -> Unit) {
         val now = SimpleDateFormat("EEEE d 'de' MMMM 'de' yyyy, HH:mm", Locale.forLanguageTag("es-CR")).format(Date())
-        val system = "Eres el asistente de la pantalla de un carro (${MyCar.MODEL}) en Costa Rica. El conductor puede ir manejando: " +
-            "responde en español, claro y breve (pocas frases, salvo que pida detalle), en texto simple sin Markdown, asteriscos ni tablas. " +
-            "La hora de la pantalla es $now. $where " +
-            "Si la pregunta llega en audio, la primera línea de tu respuesta debe ser exactamente \"Tú: \" seguido de lo que entendiste, y después la respuesta en las líneas siguientes."
+        val system = "Eres el asistente de la pantalla de un carro (${MyCar.MODEL}) en Costa Rica. El conductor puede ir manejando y la respuesta se le lee en voz alta: " +
+            "responde en español, claro, cálido y breve (dos a cuatro frases, salvo que pida detalle), en texto simple sin Markdown, asteriscos, listas ni tablas. " +
+            "La hora de la pantalla es $now. $where"
         val contents = JSONArray()
         for ((mine, said) in history) contents.put(JSONObject().put("role", if (mine) "user" else "model").put("parts", JSONArray().put(part(said))))
-        val parts = JSONArray()
-        if (audio != null) {
-            parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "audio/wav").put("data", Base64.encodeToString(audio, Base64.NO_WRAP))))
-            parts.put(part("Responde la pregunta de este audio."))
-        } else parts.put(part(text.orEmpty()))
-        contents.put(JSONObject().put("role", "user").put("parts", parts))
-        val body = JSONObject()
-            .put("system_instruction", JSONObject().put("parts", JSONArray().put(part(system))))
-            .put("contents", contents)
-            .toString().toByteArray(Charsets.UTF_8)
+        contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(part(question))))
+        call(key, "respuesta", ANSWER_MODELS, { model ->
+            JSONObject()
+                .put("system_instruction", JSONObject().put("parts", JSONArray().put(part(system))))
+                .put("contents", contents)
+                .put("generationConfig", quick(model))
+        }, stream = true, readMs = 30_000) { json -> textOf(json).takeIf { it.isNotEmpty() }?.let(onText) }
+    }
 
+    private fun textOf(json: JSONObject): String {
+        val found = StringBuilder()
+        val parts = json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: return ""
+        for (i in 0 until parts.length()) {
+            val p = parts.optJSONObject(i) ?: continue
+            if (!p.optBoolean("thought", false)) found.append(p.optString("text"))
+        }
+        return found.toString()
+    }
+
+    /**
+     * Llama a Gemini probando los [models] en orden. Con [stream] la respuesta llega en pedazos (eventos "data:") y cada
+     * uno pasa por [onJson] apenas llega; si no, llega entera. Un modelo que ya empezó a contestar no se cambia.
+     */
+    private fun call(key: String, task: String, models: List<String>, body: (String) -> JSONObject, stream: Boolean, readMs: Int, onJson: (JSONObject) -> Unit) {
         var last = "Sin respuesta"
-        val order = listOfNotNull(model) + MODELS.filter { it != model }
+        val order = listOfNotNull(working[task]) + models.filter { it != working[task] }
         for (name in order) {
-            val connection = URL("$HOST$name:generateContent").openConnection() as HttpURLConnection
+            val action = if (stream) "streamGenerateContent?alt=sse" else "generateContent"
+            val bytes = body(name).toString().toByteArray(Charsets.UTF_8)
+            val connection = URL("$HOST$name:$action").openConnection() as HttpURLConnection
+            var started = false
             try {
                 connection.requestMethod = "POST"
                 connection.connectTimeout = 15_000
-                connection.readTimeout = 90_000
+                connection.readTimeout = readMs
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("x-goog-api-key", key)
-                connection.setFixedLengthStreamingMode(body.size)
-                connection.outputStream.use { it.write(body) }
+                connection.setFixedLengthStreamingMode(bytes.size)
+                connection.outputStream.use { it.write(bytes) }
                 val code = connection.responseCode
-                val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
-                val json = runCatching { JSONObject(raw) }.getOrNull()
                 if (code in 200..299) {
-                    val found = StringBuilder()
-                    val answerParts = json?.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
-                    if (answerParts != null) for (i in 0 until answerParts.length()) {
-                        val p = answerParts.optJSONObject(i) ?: continue
-                        if (!p.optBoolean("thought", false)) found.append(p.optString("text"))
+                    working[task] = name
+                    if (stream) {
+                        connection.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                            for (line in lines) {
+                                if (!line.startsWith("data:")) continue
+                                val json = runCatching { JSONObject(line.substring(5).trim()) }.getOrNull() ?: continue
+                                started = true
+                                onJson(json)
+                            }
+                        }
+                    } else {
+                        val raw = connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                        started = true
+                        onJson(JSONObject(raw))
                     }
-                    if (found.isNotBlank()) {
-                        model = name
-                        return found.toString()
-                    }
-                    val blocked = json?.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty()
-                    error(if (blocked.isNotEmpty()) "Gemini no quiso responder ($blocked)." else "Gemini contestó vacío; pregunta de nuevo.")
+                    return
                 }
-                val detail = json?.optJSONObject("error")?.optString("message").orEmpty().take(160)
+                val raw = connection.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+                val detail = runCatching { JSONObject(raw).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty().take(160)
                 last = when (code) {
                     400, 401, 403 -> if (detail.contains("API key", ignoreCase = true) || code != 400) "La clave de Gemini no sirve: revísala en el botón Clave. $detail" else "Gemini rechazó la pregunta: $detail"
                     404 -> "El modelo $name no existe para esta clave."
@@ -329,11 +480,14 @@ object Assistant {
                     else -> "Gemini respondió $code. $detail"
                 }
                 // Con otro modelo puede ir: no existe, está saturado o ese ya gastó su cupo gratis.
-                if (code != 404 && code != 429 && code < 500) error(last)
+                if (code == 400 && !detail.contains("model", ignoreCase = true)) error(last)
+                if (code == 401 || code == 403) error(last)
             } catch (e: IllegalStateException) {
                 throw e
             } catch (e: Exception) {
-                throw IllegalStateException("Sin conexión con Gemini: ${e.javaClass.simpleName} ${e.message.orEmpty().take(100)}")
+                last = if (e is java.net.SocketTimeoutException) "Gemini tardó demasiado en contestar; intenta de nuevo." else "Sin conexión con Gemini: ${e.javaClass.simpleName} ${e.message.orEmpty().take(100)}"
+                // Si ya estaba escribiendo la respuesta, no se empieza otra con otro modelo.
+                if (started) error(last)
             } finally {
                 connection.disconnect()
             }
@@ -416,7 +570,7 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
         actions = {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(end = 10.dp)) {
                 if (!editing) {
-                    if (Assistant.canSpeak) Button(stringResource(if (prefs.assistantSpeak) R.string.assistant_voice_on else R.string.assistant_voice_off), {
+                    Button(stringResource(if (prefs.assistantSpeak) R.string.assistant_voice_on else R.string.assistant_voice_off), {
                         prefs.assistantSpeak = !prefs.assistantSpeak
                         if (!prefs.assistantSpeak) Assistant.quiet()
                     })
@@ -447,12 +601,14 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             val list = rememberLazyListState()
             val count = Assistant.messages.size
-            LaunchedEffect(count, Assistant.busy) { if (count > 0) list.scrollToItem(count - 1 + if (Assistant.busy) 1 else 0) }
+            // Baja sola mientras llega la respuesta (cada pedazo cambia el largo del último mensaje).
+            val tail = Assistant.messages.lastOrNull()?.text?.length ?: 0
+            LaunchedEffect(count, tail, Assistant.transcribing) { if (count > 0) list.scrollToItem(count - 1 + if (Assistant.transcribing) 1 else 0, 100_000) }
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 if (count == 0 && !Assistant.busy) Label(stringResource(R.string.assistant_empty), Typography.subtitle, c.textMuted, 4, Modifier.align(Alignment.Center))
                 LazyColumn(Modifier.fillMaxSize(), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(Assistant.messages) { m -> Bubble(m) }
-                    if (Assistant.busy) item { Label(stringResource(R.string.assistant_thinking), Typography.body, c.accent, 1, Modifier.padding(10.dp)) }
+                    if (Assistant.transcribing) item { Label(stringResource(R.string.assistant_hearing), Typography.body, c.accent, 1, Modifier.padding(10.dp)) }
                 }
             }
             Column(Modifier.width(200.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -475,7 +631,9 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
                     stringResource(
                         when {
                             recording -> R.string.assistant_listening
+                            Assistant.transcribing -> R.string.assistant_hearing
                             Assistant.busy -> R.string.assistant_thinking
+                            Assistant.speaking -> R.string.assistant_speaking
                             else -> R.string.assistant_tap
                         },
                     ),
@@ -498,17 +656,26 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
 @Composable
 private fun Bubble(m: Assistant.Message) {
     val c = LocalColors.current
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start) {
+    // Como un chat: lo que dices, a la izquierda y con el color de acento; lo que contesta, a la derecha.
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (m.mine) Arrangement.Start else Arrangement.End) {
         Box(
-            Modifier.fillMaxWidth(if (m.mine) 0.8f else 1f).clip(RoundedCornerShape(Radius.inner)).background(if (m.mine) c.surfaceHigh else c.surface)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth(0.82f)
+                .clip(RoundedCornerShape(topStart = if (m.mine) 4.dp else 18.dp, topEnd = if (m.mine) 18.dp else 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp))
+                .background(
+                    when {
+                        m.mine -> c.primary
+                        m.error -> c.surface
+                        else -> c.surfaceHigh
+                    },
+                )
+                .padding(horizontal = 18.dp, vertical = 12.dp),
         ) {
             Label(
-                m.text,
-                if (m.mine) Typography.body else Typography.subtitle,
+                m.text.ifEmpty { "…" },
+                Typography.subtitle,
                 when {
+                    m.mine -> c.onPrimary
                     m.error -> c.danger
-                    m.mine -> c.textMuted
                     else -> c.text
                 },
             )

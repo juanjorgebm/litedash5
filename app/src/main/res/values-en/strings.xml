@@ -820,4 +820,6 @@
     <string name="photos_syncing">Downloading…</string>
     <string name="photos_link_file">Read from USB</string>
     <string name="photos_view">View the %1$d photos</string>
+    <string name="assistant_hearing">Writing down what you said…</string>
+    <string name="assistant_speaking">Reading the answer…</string>
 </resources>
