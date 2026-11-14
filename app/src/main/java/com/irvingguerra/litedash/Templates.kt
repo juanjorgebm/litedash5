@@ -60,6 +60,8 @@ fun nameOf(p: Template) = when (p) {
     Template.COPILOT -> R.string.template_copilot
     Template.ROUTE -> R.string.template_route
     Template.VERTICAL_MAP -> R.string.template_vertical_map
+    Template.OKAVANGO -> R.string.template_okavango
+    Template.NAV_MUSIC -> R.string.template_nav_music
 }
 
 private fun nameOf(t: ScreenSize) = when (t) {
@@ -70,7 +72,7 @@ private fun nameOf(t: ScreenSize) = when (t) {
 }
 
 /** Las que lucen el mapa: van en su pestaña y no se repiten en la del auto. */
-private val MAP_TEMPLATES = listOf(Template.MAP_CAR, Template.COPILOT, Template.ROUTE, Template.VERTICAL_MAP)
+private val MAP_TEMPLATES = listOf(Template.MAP_CAR, Template.COPILOT, Template.ROUTE, Template.VERTICAL_MAP, Template.NAV_MUSIC)
 
 /**
  * Estilos de plantilla (una pestaña cada uno): con el auto 3D, con el mapa de protagonista,

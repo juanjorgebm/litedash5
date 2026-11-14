@@ -78,6 +78,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.core.content.ContextCompat
 
 /**
  * Ajustes → Llantas, en pestañas: Llantas (de dónde se leen, el auto desde arriba —tocar una la
@@ -543,7 +544,7 @@ private fun DiagnosticsCard(repo: TpmsRepository) {
         }
         Button(stringResource(R.string.tires_copy), {
             val text = "LiteDash ${BuildConfig.VERSION_NAME} · ${repo.source?.key}\n" + lines.joinToString("\n")
-            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("LiteDash", text))
+            ContextCompat.getSystemService(context, ClipboardManager::class.java)!!.setPrimaryClip(ClipData.newPlainText("LiteDash", text))
         })
     }
 }

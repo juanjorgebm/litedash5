@@ -19,12 +19,14 @@ private val PROJECTION_WORDS = listOf("carplay", "android auto", "androidauto", 
 
 /** La app de Android Auto / CarPlay que tenga la pantalla, o null. */
 fun projectionApp(apps: List<App>): App? =
-    PROJECTION_PACKAGES.firstNotNullOfOrNull { p -> apps.firstOrNull { it.pkg == p } }
-        ?: apps.firstOrNull { a ->
+    // Primero la app del carro llamada exactamente "Android Auto" (la de Geely no usa el paquete de Google).
+    apps.firstOrNull { it.name.trim().lowercase() in setOf("android auto", "androidauto") }
+        ?: PROJECTION_PACKAGES.firstNotNullOfOrNull { p -> apps.firstOrNull { it.pkg == p } }
+        ?: apps.filter { a ->
             val name = a.name.lowercase()
             val pkg = a.pkg.lowercase()
             PROJECTION_WORDS.any { w -> w in name || w.replace(" ", "") in pkg }
-        }
+        }.let { found -> found.firstOrNull { "autokit" !in it.name.lowercase() && "autokit" !in it.pkg.lowercase() } ?: found.firstOrNull() }
 
 /** Pieza Android Auto / CarPlay: abre la app de proyección; si no hay, el cajón para buscarla. */
 @Composable

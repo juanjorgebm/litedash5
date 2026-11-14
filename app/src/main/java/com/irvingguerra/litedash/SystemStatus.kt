@@ -47,7 +47,7 @@ private fun Context.listen(receiver: BroadcastReceiver, action: String) =
 @Composable
 fun Volume(buttonSize: Dp, vertical: Boolean = false) {
     val context = LocalContext.current
-    val audio = remember { context.getSystemService(AudioManager::class.java) }
+    val audio = remember { ContextCompat.getSystemService(context, AudioManager::class.java)!! }
     var level by remember { mutableIntStateOf(audio.getStreamVolume(AudioManager.STREAM_MUSIC)) }
     LifecycleStartEffect(audio) {
         level = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -95,11 +95,23 @@ fun StatusIcons() {
     var bluetooth by remember { mutableStateOf(false) }
     var location by remember { mutableStateOf(false) }
     LifecycleStartEffect(Unit) {
-        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val connectivity = ContextCompat.getSystemService(context, ConnectivityManager::class.java)!!
         // Siempre se lee la red activa: Android 6 y 7 no avisan cómo está al registrarse (solo
         // cambios) y, escuchando cualquier red, perder una no quiere decir quedarse sin internet.
         fun check(lost: Network? = null) {
             // Al perder una red, Android 6 puede seguir dándola como activa un instante.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                // Android 5 no tiene activeNetwork: se lee el tipo de la red activa a la antigua.
+                @Suppress("DEPRECATION")
+                val info = runCatching { connectivity.activeNetworkInfo?.takeIf { it.isConnected } }.getOrNull()
+                @Suppress("DEPRECATION")
+                network = when (info?.type) {
+                    ConnectivityManager.TYPE_WIFI, ConnectivityManager.TYPE_ETHERNET -> true
+                    ConnectivityManager.TYPE_MOBILE -> false
+                    else -> null
+                }
+                return
+            }
             val caps = runCatching { connectivity.activeNetwork?.takeIf { it != lost }?.let(connectivity::getNetworkCapabilities) }.getOrNull()
             network = when {
                 caps == null -> null
@@ -120,20 +132,31 @@ fun StatusIcons() {
         }
         check()
 
-        val audio = context.getSystemService(AudioManager::class.java)
+        val audio = ContextCompat.getSystemService(context, AudioManager::class.java)!!
         fun checkAudio() {
-            bluetooth = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
-                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+            bluetooth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                }
+            } else {
+                // Android 5: sin lista de salidas de audio; basta con saber si A2DP o SCO están activos.
+                @Suppress("DEPRECATION")
+                (audio.isBluetoothA2dpOn || audio.isBluetoothScoOn)
             }
         }
-        val audioCallback = object : AudioDeviceCallback() {
+        val audioCallback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) object : AudioDeviceCallback() {
             override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = checkAudio()
             override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = checkAudio()
-        }
-        audio.registerAudioDeviceCallback(audioCallback, null)
+        } else null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && audioCallback != null) audio.registerAudioDeviceCallback(audioCallback, null)
+        // Android 5 no avisa de cambios de salida: se vuelve a leer cuando cambia el Bluetooth de audio.
+        val a2dpReceiver = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) = checkAudio()
+        } else null
+        a2dpReceiver?.let { context.listen(it, "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED") }
         checkAudio()
 
-        val locations = context.getSystemService(LocationManager::class.java)
+        val locations = ContextCompat.getSystemService(context, LocationManager::class.java)!!
         fun checkLocation() {
             location = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) locations.isLocationEnabled
             else locations.isProviderEnabled(LocationManager.GPS_PROVIDER)
@@ -146,7 +169,8 @@ fun StatusIcons() {
 
         onStopOrDispose {
             runCatching { connectivity.unregisterNetworkCallback(netCallback) }
-            audio.unregisterAudioDeviceCallback(audioCallback)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && audioCallback != null) audio.unregisterAudioDeviceCallback(audioCallback)
+            a2dpReceiver?.let { runCatching { context.unregisterReceiver(it) } }
             context.unregisterReceiver(locationReceiver)
         }
     }

@@ -1,5 +1,6 @@
 package com.irvingguerra.litedash
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -19,6 +20,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
@@ -27,6 +30,7 @@ import com.irvingguerra.litedash.core.ui.Button
 import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
+import com.irvingguerra.litedash.core.ui.MyCar
 import com.irvingguerra.litedash.core.ui.Typography
 import com.irvingguerra.litedash.feature.car.CAR_ASPECT
 import com.irvingguerra.litedash.feature.car.CarPackage
@@ -57,12 +61,15 @@ fun HomeCar(
     if (pkg == null) ReadyNow(onReady)
     val wheels: (@Composable (() -> WheelSpots) -> Unit)? = remember(onTires) { onTires?.let { open -> { spots -> WheelPills(d, spots, open) } } }
     CarTile(
-        name = d.prefs.carName ?: pkg?.name ?: stringResource(R.string.my_car),
+        name = d.prefs.carName ?: pkg?.name ?: MyCar.MODEL,
         color = color,
         onClick = onClick,
         modifier = modifier,
         drawing = pkg?.let { p ->
             { m -> CarTurntable(d.cars, p, d.prefs.carPaint, m, d.prefs.carAngle, { d.prefs.carAngle = it }, onReady, wheels) }
+        } ?: { m ->
+            // Sin modelo del catálogo: la foto del Okavango (sin fondo) en vez del sedán dibujado.
+            Image(painterResource(R.drawable.okavango), contentDescription = MyCar.MODEL, modifier = m, contentScale = ContentScale.Fit)
         },
         hasFloor = pkg?.hasFloor == true,
     )
@@ -89,7 +96,11 @@ fun HeroTile(
             ReadyNow(onReady)
             ImageTile(d, tile.data, onClick, modifier)
         }
-        else -> HomeCar(d, pkg, onClick, modifier, onReady, onTires)
+        // Sin modelo 3D del catálogo: el Okavango sobre el cielo del clima (ya está pintado: listo de una vez).
+        else -> if (pkg == null) {
+            ReadyNow(onReady)
+            OkavangoScene(d, onClick, modifier)
+        } else HomeCar(d, pkg, onClick, modifier, onReady, onTires)
     }
 }
 

@@ -98,7 +98,7 @@ internal class DeviceWatcher(
      * BLUETOOTH_CONNECT (se da en el Taller); sin él, solo se sabrá al reconectarse.
      */
     private fun connectedPhone() {
-        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return
+        val adapter = ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter ?: return
         if (!adapter.isEnabled || !canSeeDevices()) return
         for (profile in intArrayOf(A2DP_SINK, BluetoothProfile.A2DP)) {
             runCatching {
@@ -117,7 +117,7 @@ internal class DeviceWatcher(
     /** Desde Android 12, el nombre del celular (y los avisos de conexión) piden BLUETOOTH_CONNECT. */
     private fun canSeeDevices(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission") // se revisa con canSeeDevices()
     private fun isPhone(d: BluetoothDevice?): Boolean =
@@ -178,7 +178,7 @@ object Drives {
     fun list(context: Context): List<Drive> = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             val volumes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) MediaStore.getExternalVolumeNames(context) else emptySet()
-            context.getSystemService(StorageManager::class.java).storageVolumes
+            ContextCompat.getSystemService(context, StorageManager::class.java)!!.storageVolumes
                 .filter { it.isRemovable && it.state == Environment.MEDIA_MOUNTED }
                 .map { v ->
                     val uuid = v.uuid
@@ -192,10 +192,20 @@ object Drives {
         } else {
             // Android 6 no lista los volúmenes: las memorias se montan como carpetas de /storage
             // (solo las removibles: ahí también hay enlaces a la memoria interna).
-            File("/storage").listFiles().orEmpty()
+            val found = File("/storage").listFiles().orEmpty()
                 .filter { it.name != "emulated" && it.name != "self" && Environment.getExternalStorageState(it) == Environment.MEDIA_MOUNTED }
                 .filter { runCatching { Environment.isExternalStorageRemovable(it) }.getOrDefault(false) }
                 .map { Drive(name = context.getString(R.string.usb_drive), volume = null, path = it.path, id = it.name) }
+            // Pantallas de carro (p. ej. Neusoft): la USB se monta anidada, como /storage/usbotg/usbotg-sda2,
+            // y Android no la declara removible. Se toma cualquier carpeta legible con contenido a dos niveles.
+            found.ifEmpty {
+                val internal = runCatching { Environment.getExternalStorageDirectory().canonicalPath }.getOrNull()
+                File("/storage").listFiles().orEmpty()
+                    .filter { it.isDirectory && it.name != "emulated" && it.name != "self" && it.name != "sdcard0" && it.name != "sdcard" }
+                    .flatMap { top -> top.listFiles().orEmpty().filter { it.isDirectory }.ifEmpty { listOf(top) } }
+                    .filter { d -> runCatching { d.canonicalPath != internal && !d.listFiles().isNullOrEmpty() }.getOrDefault(false) }
+                    .map { Drive(name = context.getString(R.string.usb_drive), volume = null, path = it.path, id = it.path) }
+            }
         }
     }.getOrDefault(emptyList())
 

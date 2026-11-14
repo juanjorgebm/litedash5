@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -58,11 +61,10 @@ fun textOf(sky: Sky) = when (sky) {
 @Composable
 fun rememberEnableWeather(repo: WeatherRepository): () -> Unit {
     val scope = rememberCoroutineScope()
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) {
-            repo.enable()
-            scope.launch { repo.refreshIfStale(force = true) }
-        }
+    // Sin el permiso también se prende: usa Palmares, Alajuela.
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+        repo.enable()
+        scope.launch { repo.refreshIfStale(force = true) }
     }
     return { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
 }
@@ -80,7 +82,7 @@ fun WeatherRefresh(repo: WeatherRepository, revision: Int) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 repo.refreshIfStale()
-                delay(WeatherRepository.STALE_MS)
+                delay(WeatherRepository.CHECK_MS)
             }
         }
     }
@@ -122,7 +124,30 @@ fun WeatherTile(repo: WeatherRepository) {
     if (!repo.active || w == null) {
         return ShortcutTile(Icons.sun, stringResource(R.string.tile_weather), stringResource(if (repo.active) R.string.weather_loading else R.string.tap_to_enable), enable)
     }
-    Card(Modifier.fillMaxSize()) {
+    // Grande (ancho o alto): el pronóstico por días en una tarjeta y las próximas 4 horas en otra.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val hours = w.hours.take(4)
+        val wide = maxWidth > 560.dp && maxHeight > 150.dp
+        val tall = !wide && maxHeight > 300.dp
+        when {
+            hours.isNotEmpty() && wide -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                NowCard(w, Modifier.weight(1f).fillMaxHeight())
+                HoursCard(hours, Modifier.weight(1f).fillMaxHeight())
+            }
+            hours.isNotEmpty() && tall -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                NowCard(w, Modifier.weight(1f).fillMaxWidth())
+                HoursCard(hours, Modifier.weight(1f).fillMaxWidth())
+            }
+            else -> NowCard(w, Modifier.fillMaxSize())
+        }
+    }
+}
+
+/** Hoy en grande, el lugar y, si cabe, los próximos días. */
+@Composable
+private fun NowCard(w: Weather, modifier: Modifier) {
+    val c = LocalColors.current
+    Card(modifier) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.CenterStart) {
             val big = maxHeight > 120.dp
             val showDays = maxWidth > 340.dp && w.days.size > 1
@@ -133,6 +158,7 @@ fun WeatherTile(repo: WeatherRepository) {
                     val today = w.days.firstOrNull()
                     val detail = stringResource(textOf(skyOf(w.code))) + (today?.let { " · ${it.max}° / ${it.min}°" } ?: "")
                     Label(detail, Typography.small, c.textMuted, maxLines = 1)
+                    if (w.place.isNotBlank()) Label(w.place, Typography.small, c.textMuted, maxLines = 1)
                 }
                 if (showDays) {
                     val locale = currentLocale()
@@ -146,6 +172,28 @@ fun WeatherTile(repo: WeatherRepository) {
                             Icon(iconOf(skyOf(d.code), true), c.text, 24.dp)
                             Label("${d.max}°", Typography.small, maxLines = 1)
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Las próximas horas: la hora, el cielo, la temperatura y la probabilidad de lluvia. */
+@Composable
+private fun HoursCard(hours: List<WeatherHour>, modifier: Modifier) {
+    val c = LocalColors.current
+    Card(modifier) {
+        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
+            Label(stringResource(R.string.weather_next_hours), Typography.label, c.textMuted, 1)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                for (h in hours) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Label(h.time, Typography.small, c.textMuted, 1)
+                        Icon(iconOf(skyOf(h.code), h.time.take(2).toIntOrNull()?.let { it in 6..18 } ?: true), c.accent, 32.dp)
+                        Label("${h.temperature}°", Typography.subtitle, maxLines = 1)
+                        Label("${h.rain}%", Typography.small, if (h.rain >= 40) c.accent else c.textMuted, 1)
                     }
                 }
             }

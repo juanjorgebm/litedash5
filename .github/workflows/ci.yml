@@ -23,8 +23,18 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
 
+      # La descarga de Gradle falla a veces (504 o tiempo agotado en services.gradle.org): se reintenta antes de compilar.
+      - name: Descargar Gradle (con reintentos)
+        run: |
+          for i in $(seq 1 12); do
+            ./gradlew --version --console=plain && exit 0
+            echo "Intento $i falló; se espera 30 s"
+            sleep 30
+          done
+          exit 1
+
       - name: Compilar, lint y pruebas
-        run: ./gradlew assemblePlayDebug assembleGithubRelease :benchmark:assembleBenchmark lint test --console=plain
+        run: ./gradlew assemblePlayDebug assembleGithubRelease :benchmark:assembleBenchmark lint test --continue --console=plain
 
       - name: Presupuesto de tamaño
         run: |
@@ -35,6 +45,16 @@ jobs:
             echo "::error::El APK pesa $((size / 1024)) KB y el presupuesto es 8 MB"
             exit 1
           fi
+
+      - name: APK para instalar a mano (Android 5 o más nuevo)
+        uses: actions/upload-artifact@v4
+        with:
+          name: litedash-apk
+          path: app/build/outputs/apk/github/release/app-github-release.apk
+
+      - name: Errores de lint en el log
+        if: failure()
+        run: find . -path '*lint_intermediate_text_report*' -name '*.txt' -exec sh -c 'echo "== $1"; cat "$1"' _ {} \;
 
       - name: Reportes de lint
         if: failure()

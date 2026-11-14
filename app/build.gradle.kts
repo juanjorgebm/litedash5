@@ -49,13 +49,22 @@ android {
 
     defaultConfig {
         applicationId = "com.irvingguerra.litedash"
-        minSdk = 23
+        minSdk = 22
         targetSdk = 37
         versionCode = versionCodeFrom(appVersionName)
         versionName = appVersionName
     }
 
     signingConfigs {
+        // Llave fija (en el repositorio) para el debug y para el release sin llave propia: si cada compilación
+        // se firmara con una llave nueva, Android no deja actualizar encima y habría que desinstalar y configurar todo otra vez.
+        getByName("debug") {
+            storeFile = file("litedash-car.p12")
+            storeType = "pkcs12"
+            storePassword = "android"
+            keyAlias = "litedashcar"
+            keyPassword = "android"
+        }
         if (hasSigning) {
             create("release") {
                 storeFile = file(signingValue("storeFile", "LITEDASH_STORE_FILE")!!)
@@ -89,7 +98,8 @@ android {
             dimension = "channel"
             buildConfigField("String", "CHANNEL", "\"github\"")
             buildConfigField("String", "CATALOG_URL", "\"$CATALOG_URL\"")
-            buildConfigField("String", "UPDATES_URL", "\"https://api.github.com/repos/IrvingGuerra/litedash/releases?per_page=20\"")
+            // Las versiones de este fork salen en sus propios lanzamientos (ver .github/workflows/publicar.yml).
+            buildConfigField("String", "UPDATES_URL", "\"https://api.github.com/repos/juanjorgebm/litedash5/releases?per_page=20\"")
         }
     }
 
@@ -124,6 +134,8 @@ android {
         // Las versiones se fijan a mano; no son errores.
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
         warningsAsErrors = false
+        // Los errores también en la consola: así se ven en el log de CI sin bajar el reporte.
+        textReport = true
     }
 
     // El idioma se elige dentro de la app: Play debe traer español e inglés siempre.

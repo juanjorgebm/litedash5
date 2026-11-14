@@ -17,7 +17,7 @@ import javax.net.ssl.TrustManagerFactory
  * Conexiones HTTPS que también sirven en Android 6 y 7.0. Las descargas de GitHub y el clima
  * (Open-Meteo) usan Let's Encrypt, cuya raíz (ISRG Root X1/X2) Android trae desde la 7.1.1;
  * antes, y sin network_security_config (es de Android 7), se confía en las raíces del sistema
- * MÁS esas dos, que vienen en `res/raw/isrg_roots.pem` (sacadas de las raíces de macOS; huellas
+ * MÁS esas dos y las de GitHub (USERTrust, Sectigo, DigiCert G2, Amazon: sus raíces nuevas no están en Android 5), que vienen en `res/raw/isrg_roots.pem` (sacadas de las raíces de macOS; huellas
  * SHA-256 96:BC:EC…:08:C6 y 69:72:9B…:14:70). De la API 26 en adelante no cambia nada.
  *
  * Vive en core/ui porque es el único módulo que comparten app, feature/car y feature/updater

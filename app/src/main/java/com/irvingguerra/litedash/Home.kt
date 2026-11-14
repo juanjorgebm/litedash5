@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -63,6 +64,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.irvingguerra.litedash.core.ui.Button
+import com.irvingguerra.litedash.core.ui.Icon
+import com.irvingguerra.litedash.core.ui.Card
 import com.irvingguerra.litedash.core.ui.IconButton
 import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
@@ -74,6 +77,7 @@ import com.irvingguerra.litedash.core.vehicle.Signal
 import com.irvingguerra.litedash.core.vehicle.VehicleBus
 import com.irvingguerra.litedash.feature.apps.App
 import com.irvingguerra.litedash.feature.apps.AppIcon
+import com.irvingguerra.litedash.feature.music.SourceKind
 import com.irvingguerra.litedash.feature.apps.AppRepository
 import com.irvingguerra.litedash.feature.apps.rememberApps
 import com.irvingguerra.litedash.feature.car.CarPackage
@@ -91,8 +95,12 @@ import com.irvingguerra.litedash.feature.music.RadioExpanded
 import com.irvingguerra.litedash.feature.music.RadioTile
 import com.irvingguerra.litedash.feature.navigation.NavigationRepository
 import com.irvingguerra.litedash.feature.obd.ObdRepository
+import com.irvingguerra.litedash.feature.player.Player
+import com.irvingguerra.litedash.feature.player.RadioScreen
 import com.irvingguerra.litedash.feature.player.PlayerBrowser
 import com.irvingguerra.litedash.feature.player.PlayerSource
+import com.irvingguerra.litedash.feature.player.RadioFavorites
+import com.irvingguerra.litedash.feature.player.Station
 import com.irvingguerra.litedash.feature.tpms.TpmsRepository
 import com.irvingguerra.litedash.feature.updater.Updater
 import kotlinx.coroutines.delay
@@ -107,6 +115,14 @@ enum class Expanded { MUSIC, RADIO, MAP }
 /** Qué panel está abierto encima del inicio (uno a la vez). */
 sealed interface Panel {
     data object Drawer : Panel
+    /** La radio por internet a pantalla completa: explorar por país, género o nombre. */
+    data object RadioFull : Panel
+    data object WeatherFull : Panel
+    data object Contacts : Panel
+    data object Assistant : Panel
+    data object Photos : Panel
+    /** El mapa a pantalla completa con los lugares cercanos; [data] es el aspecto de la pieza que se tocó. */
+    data class MapFull(val data: String) : Panel
     data object Settings : Panel
     /** Ajustes abiertos en Sistema → Actualizaciones (desde el aviso de versión nueva). */
     data object Updates : Panel
@@ -128,6 +144,8 @@ sealed interface Panel {
     data class CustomizeMap(val tileId: String) : Panel
     /** Ajustes abiertos en Llantas (desde la vista de llantas o la pieza sin configurar). */
     data object TiresSettings : Panel
+    /** Elegir un widget de otra app de Android. */
+    data object PickWidget : Panel
 }
 
 class Dependencies(
@@ -237,7 +255,14 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
                     p,
                     car,
                     // Una imagen sin foto abre su panel para elegirla; lo demás crece.
-                    onClick = { if (p.type == TileTypes.IMAGE && p.data.isEmpty()) actions.onPanel(Panel.CustomizeImage(p.id)) else actions.onCarOnly(p) },
+                    onClick = {
+                        when {
+                            p.type == TileTypes.IMAGE && p.data.isEmpty() -> actions.onPanel(Panel.CustomizeImage(p.id))
+                            // El Okavango con su clima: un toque abre el pronóstico por hora y por día.
+                            car == null && p.type != TileTypes.IMAGE && p.type != TileTypes.ROAD -> actions.onPanel(Panel.WeatherFull)
+                            else -> actions.onCarOnly(p)
+                        }
+                    },
                     modifier = Modifier.fillMaxSize(),
                     onTires = onTires,
                 )
@@ -260,7 +285,7 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
         // Ya de media pantalla o más: lo de en grande ahí mismo (no se mueve).
         TileTypes.MUSIC -> if (p.fillsHalf(d.dashboard.grid)) MusicBig(d, close = null)
         else MusicTile(d.music, revision, onExpand = remember(p) { { actions.onExpand(Expanded.MUSIC, p) } })
-        TileTypes.RADIO -> if (p.fillsHalf(d.dashboard.grid)) RadioBig(d, close = null) { actions.onPanel(Panel.MusicSettings) }
+        TileTypes.RADIO -> if (p.fillsHalf(d.dashboard.grid)) RadioBig(d, close = null, onMaximize = { actions.onPanel(Panel.RadioFull) }) { actions.onPanel(Panel.MusicSettings) }
         else RadioTile(d.music, revision, onExpand = remember(p) { { actions.onExpand(Expanded.RADIO, p) } })
         TileTypes.CLOCK -> ClockTile(d.prefs.driverName, d.weather)
         TileTypes.WEATHER -> WeatherTile(d.weather)
@@ -276,17 +301,31 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
         TileTypes.TIRES -> TiresTile(d, onOpen = actions.onTires, onSettings = { actions.onPanel(Panel.TiresSettings) })
         TileTypes.MAP -> {
             val app = mapApp(d, apps)
-            val expand = remember(p) { { actions.onExpand(Expanded.MAP, p) } }
+            // Un toque abre el mapa a pantalla completa con los lugares cercanos.
+            val expand = remember(p) { { actions.onPanel(Panel.MapFull(p.data)) } }
             MapTile(
                 d, p.data, app, editing = actions.editing(),
                 onPlace = remember(app) { { navigateTo(context, app, it) } },
                 onNavigate = remember(app) { { actions.onNavigate(app) } },
-                onExpand = if (p.fillsHalf(d.dashboard.grid)) null else expand,
+                onExpand = expand,
             )
         }
+        TileTypes.FAVORITES -> FavoritesTile(onOpen = { actions.onPanel(Panel.Contacts) })
+        TileTypes.CAR_NAV -> {
+            val navApp = mapApp(d, apps)
+            CarNavTile(d, onOpen = remember(navApp) { { actions.onNavigate(navApp) } })
+        }
+        TileTypes.COMPASS -> CompassTile(d)
+        TileTypes.THEME -> ThemeTile(d.prefs)
+        TileTypes.RECENT_APPS -> RecentAppsTile(d.apps, apps, p.width, p.height)
+        TileTypes.ASSISTANT -> AssistantTile(onOpen = { actions.onPanel(Panel.Assistant) })
+        TileTypes.PHOTOS -> PhotosTile(onOpen = { actions.onPanel(Panel.Photos) })
+        TileTypes.WIDGET -> WidgetTile(p.data)
         TileTypes.PHONE -> ShortcutTile(Icons.phone, stringResource(R.string.tile_phone), null) {
             openDialer(context)
         }
+        TileTypes.WIFI -> WifiToggleTile()
+        TileTypes.BLUETOOTH -> BluetoothToggleTile()
         TileTypes.APP -> {
             val app = d.apps.find(apps, p.data)
             AppTile(d.apps, app) {
@@ -411,6 +450,11 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
     // Clima al volver al inicio y cada media hora con el inicio a la vista (si está activado); nunca en segundo plano.
     WeatherRefresh(d.weather, revision)
     // Versión nueva de la app (a lo más cada 12 h, al volver al inicio) y modelo 3D nuevo del auto (cada hora).
+    val ctxBt = androidx.compose.ui.platform.LocalContext.current
+    DisposableEffect(d.prefs.keepBluetooth) {
+        val stop = if (d.prefs.keepBluetooth) CarBluetoothKeeper.watch(ctxBt) { CarBluetoothKeeper.ensure(ctxBt) } else ({})
+        onDispose { stop() }
+    }
     LaunchedEffect(revision) { d.updater.checkQuietly() }
     LaunchedEffect(d.prefs.carModel) { d.cars.checkQuietly(d.prefs.carModel) }
     // Cuántas pantallas usan LiteDash: a lo más una vez al día.
@@ -508,15 +552,27 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
           }
           val favorites = remember(apps, d.prefs.dock, d.prefs.musicApp) { dockFavorites(d, apps) }
           Row(Modifier.fillMaxSize()) {
+            val railContext = LocalContext.current
             if (rail) Rail(
-                repo = d.apps,
-                favorites = favorites,
+                active = expanded,
+                onHome = { backToDashboard() },
+                onProjection = {
+                    val projection = projectionApp(apps)
+                    if (projection != null) d.apps.open(railContext, projection) else panel = Panel.Drawer
+                },
+                onMusic = { expanded = Expanded.MUSIC },
+                onRadio = {
+                    // Con la radio por internet encendida, el botón abre esa (no la FM de la pantalla).
+                    if (d.prefs.internetRadio) { d.music.radioInternet = true; expanded = Expanded.RADIO }
+                    else if (d.music.sourceApps[SourceKind.RADIO] != null) d.music.openRadioApp() else expanded = Expanded.RADIO
+                },
+                onPhone = { openDialer(railContext) },
                 onApps = { panel = Panel.Drawer },
                 onSettings = { panel = Panel.Settings },
             )
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 // Si ya hay un reloj en el tablero (o en la barra lateral), la barra no repite la hora.
-                val showTime = !rail && d.dashboard.tiles.none { it.type == TileTypes.CLOCK }
+                val showTime = true
                 val barHidden = !editing && !showTime
                 TopBar(
                     editing = editing,
@@ -576,18 +632,17 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
                             val close = { expanded = null }
                             when (big) {
                                 Expanded.MUSIC -> MusicBig(d, close, Modifier.padding(6.dp))
-                                Expanded.RADIO -> RadioBig(d, close, Modifier.padding(6.dp)) { panel = Panel.MusicSettings }
+                                Expanded.RADIO -> RadioBig(d, close, Modifier.padding(6.dp), onMaximize = { panel = Panel.RadioFull }) { panel = Panel.MusicSettings }
                                 Expanded.MAP -> {
                                     val app = mapApp(d, apps)
                                     MapExpanded(d, from?.data ?: "", app, onPlace = { navigateTo(context, app, it) }, onNavigate = { actions.onNavigate(app) }, close = close, Modifier.padding(6.dp))
                                 }
                             }
-                        } else Dashboard(
+                        } else PagedDashboard(
+                                state = d.dashboard,
                                 grid = grid,
-                                tiles = d.dashboard.shown,
                                 editing = editing,
                                 limits = ::limitsOf,
-                                onChange = d.dashboard::changeShown,
                                 onEdit = { editing = true },
                                 onSettings = {
                                     panel = when (it.type) {
@@ -613,6 +668,12 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
         when (val p = panel) {
             null -> Unit
             Panel.Drawer -> DrawerPanel(d, apps, close = { panel = null })
+            Panel.Contacts -> ContactsScreen(close = { panel = null })
+            Panel.Assistant -> AssistantScreen(d, close = { panel = null })
+            Panel.Photos -> PhotosScreen(close = { panel = null })
+            Panel.WeatherFull -> WeatherFullScreen(d, close = { panel = null })
+            Panel.RadioFull -> RadioScreen({ panel = null }, Modifier.fillMaxSize())
+            is Panel.MapFull -> MapFullScreen(d, p.data, mapApp(d, apps), close = { panel = null })
             Panel.Settings, Panel.Updates, Panel.Workshop, Panel.MusicSettings, Panel.TiresSettings -> SettingsPanel(
                 d,
                 revision = revision,
@@ -635,9 +696,11 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
                 close = { panel = null },
                 onPickApp = { panel = Panel.PickApp(null) },
                 onPickGauge = { panel = Panel.PickGauge(null) },
+                onPickWidget = { panel = Panel.PickWidget },
             )
             is Panel.PickApp -> PickAppPanel(d, apps, p.tileId, close = { panel = null })
             is Panel.PickGauge -> PickGaugePanel(d, p.tileId, close = { panel = null })
+            Panel.PickWidget -> PickWidgetPanel(d, close = { panel = null })
             is Panel.CustomizeGauge -> CustomizeGaugePanel(d, p.tileId, close = { panel = null }, onPickSignal = { panel = Panel.PickGauge(p.tileId) })
             is Panel.CustomizeImage -> CustomizeImagePanel(d, p.tileId, close = { panel = null })
             is Panel.CustomizeMap -> CustomizeMapPanel(d, p.tileId, close = { panel = null })
@@ -728,8 +791,15 @@ private val TOP_BAR_HIDDEN = 12.dp
 @Composable
 private fun TopBar(editing: Boolean, showTime: Boolean, driverName: String?, weather: WeatherRepository, onAdd: () -> Unit, onTemplates: () -> Unit, onFinish: () -> Unit) {
     val c = LocalColors.current
+    val context = LocalContext.current
+    val offline = rememberOffline()
     // Sin nada que mostrar (la hora ya está en una pieza), la barra no aparta espacio: el tablero sube.
-    if (!editing && !showTime) return Spacer(Modifier.height(TOP_BAR_HIDDEN))
+    if (!editing && !showTime) {
+        if (!offline) return Spacer(Modifier.height(TOP_BAR_HIDDEN))
+        return Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp), contentAlignment = Alignment.CenterStart) {
+            OfflineNotice { openWifiSettings(context) }
+        }
+    }
     Row(
         Modifier.fillMaxWidth().height(topBarHeight()).padding(horizontal = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -742,15 +812,14 @@ private fun TopBar(editing: Boolean, showTime: Boolean, driverName: String?, wea
             Button(stringResource(R.string.done), onFinish, primary = true)
         } else {
             val clock = rememberClock()
-            // Con nombre: el saludo primero y la fecha después, más tenue.
+            // Fecha a la izquierda, hora grande al centro e indicadores de conexión a la derecha.
             val hello = greeting(driverName)
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (hello != null) Label(hello, Typography.subtitle, maxLines = 1)
-                Label(clock.date, Typography.body, c.textMuted, maxLines = 1)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                if (offline) OfflineNotice { openWifiSettings(context) }
+                else Label(if (hello != null) "$hello · ${clock.date}" else clock.date, Typography.body, c.textMuted, maxLines = 1)
             }
-            WeatherChip(weather)
-            StatusIcons()
-            Label(clock.full, Typography.subtitle, maxLines = 1)
+            Label(clock.full, Typography.title, maxLines = 1)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { StatusIcons() }
         }
     }
 }
@@ -808,46 +877,55 @@ private fun AppShortcut(repo: AppRepository, app: App, box: Dp, icon: Dp) {
 }
 
 /**
- * Barra lateral (pantallas acostadas): hora, clima y estado arriba; todas las apps y tus
- * favoritas (las que quepan); abajo volumen, voz y Ajustes.
+ * Barra lateral (pantallas acostadas): accesos grandes a Inicio, Android Auto, Música, Radio,
+ * Teléfono, Apps y Ajustes, con el activo en ámbar.
  */
 @Composable
 private fun Rail(
-    repo: AppRepository,
-    favorites: List<App>,
+    active: Expanded?,
+    onHome: () -> Unit,
+    onProjection: () -> Unit,
+    onMusic: () -> Unit,
+    onRadio: () -> Unit,
+    onPhone: () -> Unit,
     onApps: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val c = LocalColors.current
-    val context = LocalContext.current
     val small = isSmallScreen()
-    val button = if (small) 52.dp else 56.dp
-    val icon = if (small) 40.dp else 44.dp
-    val clock = rememberClock()
+    Card(Modifier.fillMaxHeight().width(if (small) 92.dp else 104.dp).padding(start = 10.dp, top = 10.dp, bottom = 10.dp)) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            RailButton(Icons.home, stringResource(R.string.home), active == null, onHome, Modifier.weight(1f))
+            RailButton(Icons.phoneCar, stringResource(R.string.rail_projection), false, onProjection, Modifier.weight(1f))
+            RailButton(Icons.music, stringResource(R.string.tile_music), active == Expanded.MUSIC, onMusic, Modifier.weight(1f))
+            RailButton(Icons.radio, stringResource(R.string.tile_radio), active == Expanded.RADIO, onRadio, Modifier.weight(1f))
+            RailButton(Icons.phone, stringResource(R.string.tile_phone), false, onPhone, Modifier.weight(1f))
+            RailButton(Icons.apps, stringResource(R.string.apps), false, onApps, Modifier.weight(1f))
+            RailButton(Icons.settings, stringResource(R.string.rail_settings), false, onSettings, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun RailButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val c = LocalColors.current
+    val shape = RoundedCornerShape(Radius.inner)
     Column(
-        Modifier.fillMaxHeight().width(if (small) 76.dp else 88.dp).padding(vertical = 10.dp),
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp)
+            .clip(shape)
+            .background(if (on) c.accent else Color.Transparent)
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
-        // Angosta: a.m./p.m. en chico junto a la hora (en otra línea le quitaría lugar a las apps).
-        Row(verticalAlignment = Alignment.Bottom) {
-            Label(clock.time, Typography.subtitle, maxLines = 1)
-            if (clock.marker != null) Label(clock.marker, Typography.small.copy(fontSize = 11.sp), c.textMuted, maxLines = 1, modifier = Modifier.padding(start = 2.dp, bottom = 2.dp))
-        }
-        Box(Modifier.padding(bottom = 6.dp)) { StatusIcons() }
-        IconButton(Icons.apps, onApps, size = button)
-        Box(Modifier.padding(vertical = 4.dp).width(28.dp).height(1.dp).background(c.line))
-        val voice = remember { voiceIntent(context) }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            // Las favoritas que quepan entre los accesos de arriba y los controles de abajo.
-            val fit = (maxHeight / (button + 4.dp)).toInt()
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (app in favorites.take(fit)) AppShortcut(repo, app, button, icon)
-            }
-        }
-        Volume(if (small) 40.dp else 44.dp, vertical = true)
-        if (voice != null) IconButton(Icons.mic, { runCatching { context.startActivity(voice) } }, size = button)
-        IconButton(Icons.settings, onSettings, size = button)
+        val tint = if (on) c.onPrimary else c.text
+        Icon(icon, tint, 26.dp)
+        Label(label, Typography.small.copy(fontSize = 12.sp), tint, maxLines = 1)
     }
 }
 
@@ -929,7 +1007,16 @@ private fun MusicBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier =
 
 /** La radio en grande: FM o internet y, si está prendida, las estaciones por internet. */
 @Composable
-private fun RadioBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier = Modifier, onSettings: () -> Unit) = RadioExpanded(
-    d.music, close = close, onSettings = onSettings, modifier,
-    browser = if (d.prefs.internetRadio) { picked -> PlayerBrowser(PlayerSource.RADIO, picked, Modifier.fillMaxSize()) } else null,
-)
+private fun RadioBig(d: Dependencies, close: (() -> Unit)?, modifier: Modifier = Modifier, onMaximize: () -> Unit, onSettings: () -> Unit) {
+    val context = LocalContext.current
+    // La estrella de lo que suena: solo si es una estación de internet.
+    val station = Player.state.current as? Station
+    val favorite = if (d.prefs.internetRadio && station != null) RadioFavorites.isFavorite(context, station.id) else null
+    RadioExpanded(
+        d.music, close = close, onSettings = onSettings, modifier,
+        onMaximize = onMaximize,
+        browser = if (d.prefs.internetRadio) { picked -> PlayerBrowser(PlayerSource.RADIO, picked, Modifier.fillMaxSize()) } else null,
+        favorite = favorite,
+        onFavorite = station?.let { st -> { RadioFavorites.toggle(context, st) } },
+    )
+}

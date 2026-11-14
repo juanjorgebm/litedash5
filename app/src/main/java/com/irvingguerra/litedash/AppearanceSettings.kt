@@ -47,6 +47,7 @@ import com.irvingguerra.litedash.core.ui.Typography
 import com.irvingguerra.litedash.feature.dashboard.TileTypes
 import com.irvingguerra.litedash.feature.tpms.PressureUnit
 import kotlin.math.round
+import androidx.core.content.ContextCompat
 
 /** Los temas a elegir, en Inicio y apariencia y en la bienvenida: oscuro, claro, día y noche y el del sistema. */
 internal val ThemeOptions = listOf(
@@ -147,7 +148,7 @@ private fun DayNightSettings(prefs: Preferences, revision: Int) {
         )
     }
     SettingsCard(stringResource(R.string.night_source), stringResource(R.string.night_source_help)) {
-        val hasSensor = remember { context.getSystemService(SensorManager::class.java)?.getDefaultSensor(Sensor.TYPE_LIGHT) != null }
+        val hasSensor = remember { ContextCompat.getSystemService(context, SensorManager::class.java)?.getDefaultSensor(Sensor.TYPE_LIGHT) != null }
         val options = listOfNotNull(
             NightSource.SUN to R.string.night_sun,
             (NightSource.SENSOR to R.string.night_sensor).takeIf { hasSensor },
