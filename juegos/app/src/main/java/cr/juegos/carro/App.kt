@@ -39,6 +39,7 @@ class MainActivity : Activity() {
         setContentView(stage)
         stage.push(MenuScreen(this))
         immersive()
+        Updater.check(this) { stage.invalidate() }
     }
 
     @Suppress("DEPRECATION")

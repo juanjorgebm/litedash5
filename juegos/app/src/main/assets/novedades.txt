@@ -1,0 +1,10 @@
+# Novedades de los Juegos. Cada versión empieza con "número|fecha".
+# La versión más nueva va arriba; su número es el versionCode del APK.
+2|14 nov 2026
+- Botón para actualizar la app desde el menú, con las novedades de cada versión.
+- Trivia: se elige el grado escolar, de 1.° a 6.°, con 77 preguntas nuevas.
+- Corre Coco: tres mundos nuevos y más difíciles: Nieve, Nubes y Castillo.
+1|12 nov 2026
+- Primera versión: Solitario, Tres en raya, Reflejos, Parejas, Cuatro en línea y Golpea al topo.
+- Matemáticas, Trivia, Ahorcado y Corre Coco.
+- Modo de 2 jugadores, torneo y récords.

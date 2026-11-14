@@ -180,6 +180,14 @@ class MenuScreen(app: MainActivity) : Screen(app) {
         val rr = RectF(x - rw, by, x, by + bh)
         ui.iconButton(c, rr, Btn.CARD, { cx, cy, s, col -> Icons.list(c, cx, cy, s, col) }, "Récords") { stage.push(RecordsScreen(app)) }
         x = rr.left - pad
+        val ur = RectF(x - bh * 1.3f, by, x, by + bh)
+        val upd = Updater.hasUpdate
+        ui.iconButton(c, ur, if (upd) Btn.PRIMARY else Btn.CARD, { cx, cy, s, col -> Updater.icon(c, cx, cy, s, col) }) { stage.push(UpdateScreen(app)) }
+        if (upd) {
+            val k = (kotlin.math.sin(now / 250.0) * 0.5 + 0.5).toFloat()
+            G.circle(c, ur.right - bh * 0.08f, ur.top + bh * 0.08f, bh * (0.16f + 0.04f * k), C.RED)
+        }
+        x = ur.left - pad
         val tr = RectF(x - rw * 1.05f, by, x, by + bh)
         ui.iconButton(c, tr, Btn.PRIMARY, { cx, cy, s, col -> Icons.trophy(c, cx, cy, s, col) }, "Torneo") { stage.push(TourSetupScreen(app)) }
 

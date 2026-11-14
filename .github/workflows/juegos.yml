@@ -44,6 +44,16 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk juegos-carro.apk
           echo "APK: $(( $(stat -c%s juegos-carro.apk) / 1024 )) KB" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Versión y novedades
+        run: |
+          python3 - <<'PY'
+          import json, re
+          text = open("app/src/main/assets/novedades.txt", encoding="utf-8").read()
+          code = int(next(m.group(1) for m in (re.match(r"^(\d+)\|", l.strip()) for l in text.splitlines()) if m))
+          json.dump({"code": code, "name": f"1.{code}", "notes": text}, open("version.json", "w", encoding="utf-8"), ensure_ascii=False)
+          print("Versión", code)
+          PY
+
       - uses: actions/upload-artifact@v4
         with:
           name: juegos-carro-apk
@@ -60,4 +70,6 @@ jobs:
             APK de los juegos para la pantalla del carro (Android 5.1 en adelante).
             Descarga juegos-carro.apk, cópialo a una memoria USB e instálalo con el explorador de archivos.
             Compilado desde ${{ github.sha }}.
-          files: juegos/juegos-carro.apk
+          files: |
+            juegos/juegos-carro.apk
+            juegos/version.json

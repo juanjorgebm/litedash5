@@ -11,8 +11,11 @@ android {
         applicationId = "cr.juegos.carro"
         minSdk = 22
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // La versión es la primera entrada de assets/novedades.txt ("N|fecha").
+        val version = file("src/main/assets/novedades.txt").readLines()
+            .first { Regex("^\\d+\\|.*").matches(it.trim()) }.substringBefore("|").trim().toInt()
+        versionCode = version
+        versionName = "1.$version"
     }
 
     // Llave fija (no va en el repo): si existe app/juegos.keystore se usa para que cada APK nuevo
