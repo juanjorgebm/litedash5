@@ -268,7 +268,7 @@ object Assistant {
         Thread {
             val result = runCatching {
                 val body = JSONObject()
-                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(part("Lee en voz alta, en español, con tono amable y natural: " + clean.take(1200))))))
+                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(part(clean.take(1200))))))
                     .put(
                         "generationConfig",
                         JSONObject().put("responseModalities", JSONArray().put("AUDIO")).put(
@@ -302,17 +302,23 @@ object Assistant {
         val track = AudioTrack(AudioManager.STREAM_MUSIC, VOICE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(smallest, 16_384), AudioTrack.MODE_STREAM)
         check(track.state == AudioTrack.STATE_INITIALIZED) { "la pantalla no dejó usar el parlante" }
         player = track
+        // Medio segundo de silencio al final: si el búfer se queda sin datos, esta pantalla repite basura (el "ruido de radio").
+        val sound = pcm.copyOf((pcm.size and 1.inv()) + VOICE_RATE)
+        val frames = sound.size / 2
         try {
             track.play()
             var at = 0
-            while (at < pcm.size && turn == speech) {
-                val n = track.write(pcm, at, minOf(8192, pcm.size - at))
+            while (at < sound.size && turn == speech) {
+                val n = track.write(sound, at, minOf(8192, sound.size - at))
                 if (n <= 0) break
                 at += n
             }
-            // Espera a que termine de sonar lo que quedó en el búfer.
-            if (turn == speech) Thread.sleep(400)
+            // Espera a que suene todo lo escrito y corta antes de que el parlante se quede vacío.
+            val limit = System.currentTimeMillis() + 5_000
+            while (turn == speech && track.playbackHeadPosition < frames - VOICE_RATE / 4 && System.currentTimeMillis() < limit) Thread.sleep(50)
         } finally {
+            runCatching { track.pause() }
+            runCatching { track.flush() }
             runCatching { track.stop() }
             runCatching { track.release() }
             if (player === track) player = null
