@@ -331,74 +331,142 @@ object Assistant {
         }
     }
 
-    /** Lee la respuesta: con la voz de la pantalla si tiene; si no, con la voz de Gemini (audio que se reproduce aquí). */
-    private fun speak(key: String, text: String) {
-        val clean = text.replace(Regex("[*#_`]"), "").trim()
-        if (clean.isEmpty()) return
-        if (canSpeak) {
-            runCatching { tts?.speak(clean.take(3500), TextToSpeech.QUEUE_FLUSH, null, "litedash-asistente") }
-            return
-        }
-        val turn = ++speech
-        speaking = true
-        Thread {
-            val result = runCatching {
-                val body = JSONObject()
-                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(part(clean.take(1200))))))
-                    .put(
-                        "generationConfig",
-                        JSONObject().put("responseModalities", JSONArray().put("AUDIO")).put(
-                            "speechConfig",
-                            JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore"))),
-                        ),
-                    )
-                var audio: ByteArray? = null
-                call(key, "voz", ranked(key, "voz", VOICE_MODELS), { body }, stream = false, readMs = 40_000) { json ->
-                    val parts = json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
-                    if (parts != null) for (i in 0 until parts.length()) {
-                        val data = parts.optJSONObject(i)?.optJSONObject("inlineData")?.optString("data").orEmpty()
-                        if (data.isNotEmpty()) audio = Base64.decode(data, Base64.DEFAULT)
-                    }
-                }
-                val pcm = audio ?: error("Gemini no mandó audio")
-                if (turn != speech) return@runCatching
-                play(pcm, turn)
-            }
-            main.post {
-                if (turn == speech) speaking = false
-                result.exceptionOrNull()?.let { if (turn == speech) messages += Message(false, "No se pudo leer en voz alta: ${it.message}", error = true) }
-            }
-        }.start()
-    }
+    /**
+     * Una lectura en voz alta que se arma por partes: la primera frase se manda a la voz apenas llega (así empieza a
+     * hablar en un par de segundos) y lo demás se pide mientras esa suena. El audio de cada parte se pone en fila y
+     * suena seguido en el mismo parlante.
+     */
+    class Talk(private val key: String) {
+        private val turn = ++speech
+        private val texts = java.util.concurrent.LinkedBlockingQueue<String>()
+        private val audio = java.util.concurrent.LinkedBlockingQueue<ByteArray>()
+        private var sent = 0
+        private var ended = false
 
-    /** Reproduce audio PCM de 16 bits a 24 kHz (lo que manda la voz de Gemini) por el parlante de la música. */
-    @Suppress("DEPRECATION")
-    private fun play(pcm: ByteArray, turn: Int) {
-        val smallest = AudioTrack.getMinBufferSize(VOICE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val track = AudioTrack(AudioManager.STREAM_MUSIC, VOICE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(smallest, 16_384), AudioTrack.MODE_STREAM)
-        check(track.state == AudioTrack.STATE_INITIALIZED) { "la pantalla no dejó usar el parlante" }
-        player = track
-        // Medio segundo de silencio al final: si el búfer se queda sin datos, esta pantalla repite basura (el "ruido de radio").
-        val sound = pcm.copyOf((pcm.size and 1.inv()) + VOICE_RATE)
-        val frames = sound.size / 2
-        try {
-            track.play()
+        init {
+            speaking = true
+            if (!canSpeak) {
+                Thread { fetch() }.start()
+                Thread { playAll() }.start()
+            }
+        }
+
+        private fun alive() = turn == speech
+
+        private fun clean(text: String) = text.replace(Regex("[*#_`]"), "").trim()
+
+        /** Lo que hay del texto hasta ahora: si ya se completó la primera frase, sale ya. */
+        fun progress(full: String) {
+            if (sent > 0 || ended) return
+            val end = Regex("[.!?…:;](\\s|$)|\n").find(full)?.range?.first ?: return
+            if (end < 12) return
+            say(full.substring(0, end + 1))
+            sent = end + 1
+        }
+
+        /** El texto completo: lee lo que falta. */
+        fun finish(full: String) {
+            if (ended) return
+            if (full.length > sent) say(full.substring(sent))
+            ended = true
+            if (canSpeak) main.post { if (alive()) speaking = false } else texts.put("")
+        }
+
+        private fun say(part: String) {
+            val text = clean(part)
+            if (text.isEmpty()) return
+            if (canSpeak) runCatching { tts?.speak(text.take(3500), if (sent == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "litedash-$turn-$sent") }
+            else texts.put(text.take(1500))
+        }
+
+        private fun fetch() {
+            try {
+                while (alive()) {
+                    val text = texts.poll(2, java.util.concurrent.TimeUnit.MINUTES) ?: break
+                    if (text.isEmpty()) break
+                    val pcm = voice(key, text)
+                    if (!alive()) return
+                    audio.put(pcm)
+                }
+            } catch (e: Throwable) {
+                if (alive()) main.post { messages += Message(false, "No se pudo leer en voz alta: ${e.message}", error = true) }
+            } finally {
+                audio.put(ByteArray(0))
+            }
+        }
+
+        @Suppress("DEPRECATION")
+        private fun playAll() {
+            var track: AudioTrack? = null
+            var frames = 0L
+            try {
+                while (alive()) {
+                    val pcm = audio.poll(2, java.util.concurrent.TimeUnit.MINUTES) ?: break
+                    if (pcm.isEmpty()) break
+                    if (track == null) {
+                        val smallest = AudioTrack.getMinBufferSize(VOICE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                        track = AudioTrack(AudioManager.STREAM_MUSIC, VOICE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(smallest, 16_384), AudioTrack.MODE_STREAM)
+                        if (track.state != AudioTrack.STATE_INITIALIZED) { runCatching { track.release() }; track = null; break }
+                        player = track
+                        track.play()
+                    }
+                    frames += write(track, pcm.copyOf(pcm.size and 1.inv()))
+                }
+                if (track != null && alive()) {
+                    // Medio segundo de silencio al final: si el búfer se queda sin datos, esta pantalla repite basura.
+                    frames += write(track, ByteArray(VOICE_RATE))
+                    val limit = System.currentTimeMillis() + 8_000
+                    while (alive() && track.playbackHeadPosition < frames - VOICE_RATE / 4 && System.currentTimeMillis() < limit) Thread.sleep(50)
+                }
+            } catch (_: Throwable) {
+            } finally {
+                track?.let { t ->
+                    runCatching { t.pause() }
+                    runCatching { t.flush() }
+                    runCatching { t.stop() }
+                    runCatching { t.release() }
+                    if (player === t) player = null
+                }
+                main.post { if (alive()) speaking = false }
+            }
+        }
+
+        private fun write(track: AudioTrack, sound: ByteArray): Int {
             var at = 0
-            while (at < sound.size && turn == speech) {
+            while (at < sound.size && alive()) {
                 val n = track.write(sound, at, minOf(8192, sound.size - at))
                 if (n <= 0) break
                 at += n
             }
-            // Espera a que suene todo lo escrito y corta antes de que el parlante se quede vacío.
-            val limit = System.currentTimeMillis() + 5_000
-            while (turn == speech && track.playbackHeadPosition < frames - VOICE_RATE / 4 && System.currentTimeMillis() < limit) Thread.sleep(50)
-        } finally {
-            runCatching { track.pause() }
-            runCatching { track.flush() }
-            runCatching { track.stop() }
-            runCatching { track.release() }
-            if (player === track) player = null
+            return at / 2
         }
+    }
+
+    /** Lee un texto corto de una vez (por ejemplo, al terminar una imagen). */
+    private fun speak(key: String, text: String) {
+        Talk(key).finish(text)
+    }
+
+    /** El audio (PCM de 16 bits a 24 kHz) de [text] con la voz de Gemini. */
+    private fun voice(key: String, text: String): ByteArray {
+        val body = JSONObject()
+            .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(part(text)))))
+            .put(
+                "generationConfig",
+                JSONObject().put("responseModalities", JSONArray().put("AUDIO")).put(
+                    "speechConfig",
+                    JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore"))),
+                ),
+            )
+        var audio: ByteArray? = null
+        call(key, "voz", ranked(key, "voz", VOICE_MODELS), { body }, stream = false, readMs = 40_000) { json ->
+            val parts = json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+            if (parts != null) for (i in 0 until parts.length()) {
+                val data = parts.optJSONObject(i)?.optJSONObject("inlineData")?.optString("data").orEmpty()
+                if (data.isNotEmpty()) audio = Base64.decode(data, Base64.DEFAULT)
+            }
+        }
+        return audio ?: error("Gemini no mandó audio")
     }
 
     /** Calla la voz. */
@@ -542,13 +610,18 @@ object Assistant {
                 // La respuesta empieza vacía y se va llenando.
                 messages += Message(false, "")
                 val slot = messages.lastIndex
+                // La voz arranca con la primera frase, sin esperar la respuesta entera.
+                val talk = if (speakAnswer) Talk(clean) else null
                 Thread {
                     val built = StringBuilder()
                     val result = runCatching {
                         answer(clean, history, heard, where) { delta ->
                             built.append(delta)
                             val shown = built.toString()
-                            main.post { if (slot < messages.size) messages[slot] = Message(false, shown) }
+                            main.post {
+                                if (slot < messages.size) messages[slot] = Message(false, shown)
+                                talk?.progress(shown)
+                            }
                         }
                     }
                     main.post {
@@ -559,9 +632,12 @@ object Assistant {
                             final.isNotEmpty() -> {
                                 messages[slot] = Message(false, final)
                                 saveChat()
-                                if (speakAnswer) speak(clean, final)
+                                talk?.finish(final)
                             }
-                            else -> messages[slot] = Message(false, result.exceptionOrNull()?.message ?: "Gemini contestó vacío; pregunta de nuevo.", error = true)
+                            else -> {
+                                talk?.finish("")
+                                messages[slot] = Message(false, result.exceptionOrNull()?.message ?: "Gemini contestó vacío; pregunta de nuevo.", error = true)
+                            }
                         }
                     }
                 }.start()
