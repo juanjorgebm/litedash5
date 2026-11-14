@@ -22,7 +22,7 @@ enum class GameId(val title: String, val desc: String) {
     MATE("Matemáticas",
         "10 operaciones con resultado de 2 cifras.\nElige la respuesta correcta lo más rápido que puedas.\nCon 2 jugadores cada uno contesta en su mitad\nlas mismas operaciones. Gana quien acierte más."),
     TRIVIA("Trivia",
-        "10 preguntas de la escuela: Matemáticas, Español,\nCiencias y Estudios Sociales.\nCon 2 jugadores cada uno contesta en su mitad\nlas mismas preguntas. Gana quien acierte más."),
+        "10 preguntas de la escuela según el grado del niño:\nMatemáticas, Español, Ciencias y Estudios Sociales.\nCon 2 jugadores cada uno contesta en su mitad\nlas mismas preguntas. Gana quien acierte más."),
     AHORCADO("Ahorcado",
         "Adivina la palabra eligiendo letras.\nCada letra que no está dibuja una parte del ahorcado:\ntienes 6 errores. Con 2 jugadores se turnan\n3 palabras cada uno y gana quien adivine más."),
     CORRE("Corre Coco",
@@ -38,7 +38,7 @@ enum class GameId(val title: String, val desc: String) {
         MATE -> listOf("Sumas y restas", "+ − ×", "+ − × ÷")
         TRIVIA -> listOf("Todas", "Mate", "Español", "Ciencias", "Sociales")
         AHORCADO -> listOf("Fácil", "Normal", "Difícil")
-        CORRE -> listOf("Pradera", "Playa", "Volcán")
+        CORRE -> listOf("Pradera", "Playa", "Volcán", "Nieve", "Nubes", "Castillo")
     }
 
     fun levelLabel() = when (this) {
@@ -212,6 +212,7 @@ class MenuScreen(app: MainActivity) : Screen(app) {
 class SetupScreen(app: MainActivity, val game: GameId) : Screen(app) {
     private var players = Store.long("cfg_jug_${game.name}", 1).toInt()
     private var level = levelFor(players)
+    private var grade = Store.long("cfg_grado", 4).toInt().coerceIn(1, 6)
 
     private fun levelFor(p: Int) = Store.long("cfg_niv_${game.name}_$p", game.defaultLevel(p).toLong()).toInt()
         .coerceIn(0, (game.levels(p).size - 1).coerceAtLeast(0))
@@ -233,24 +234,33 @@ class SetupScreen(app: MainActivity, val game: GameId) : Screen(app) {
         // Opciones
         val rx = pad * 4 + leftW
         val rw = w - rx - pad * 2
-        val rowH = barH * 0.9f
+        val levels = game.levels(players)
+        val nRows = 1 + (if (players == 2) 1 else 0) + (if (levels.isNotEmpty()) 1 else 0) + (if (game == GameId.TRIVIA) 1 else 0)
+        val compact = nRows >= 3
+        val rowH = barH * (if (compact) 0.7f else 0.9f)
+        val labelH = barH * (if (compact) 0.4f else 0.45f)
+        val gapH = pad * (if (compact) 0.8f else 1.6f)
         var y = top
-        G.text(c, "Jugadores", rx, y + barH * 0.2f, barH * 0.3f, C.TEXT2, Paint.Align.LEFT); y += barH * 0.45f
+        G.text(c, "Jugadores", rx, y + labelH * 0.45f, barH * 0.3f, C.TEXT2, Paint.Align.LEFT); y += labelH
         ui.segmented(c, RectF(rx, y, rx + rw, y + rowH), listOf("1 jugador", "2 jugadores"), players - 1) {
             players = it + 1; level = levelFor(players)
         }
-        y += rowH + pad * 1.6f
+        y += rowH + gapH
         if (players == 2) {
-            G.text(c, "Nombres (toca para cambiar)", rx, y + barH * 0.2f, barH * 0.3f, C.TEXT2, Paint.Align.LEFT); y += barH * 0.45f
+            G.text(c, "Nombres (toca para cambiar)", rx, y + labelH * 0.45f, barH * 0.3f, C.TEXT2, Paint.Align.LEFT); y += labelH
             nameButtons(c, RectF(rx, y, rx + rw, y + rowH))
-            y += rowH + pad * 1.6f
+            y += rowH + gapH
         }
-        val levels = game.levels(players)
+        if (game == GameId.TRIVIA) {
+            G.text(c, "Grado escolar", rx, y + labelH * 0.45f, barH * 0.3f, C.TEXT2, Paint.Align.LEFT); y += labelH
+            ui.segmented(c, RectF(rx, y, rx + rw, y + rowH), (1..6).map { "$it.°" }, grade - 1) { grade = it + 1 }
+            y += rowH + gapH
+        }
         if (levels.isNotEmpty()) {
-            G.text(c, game.levelLabel(), rx, y + barH * 0.2f, barH * 0.3f, C.TEXT2, Paint.Align.LEFT); y += barH * 0.45f
+            G.text(c, game.levelLabel(), rx, y + labelH * 0.45f, barH * 0.3f, C.TEXT2, Paint.Align.LEFT); y += labelH
             ui.segmented(c, RectF(rx, y, rx + rw, y + rowH), levels, level) { level = it }
         }
-        val pbh = barH * 1.05f
+        val pbh = barH * (if (compact) 0.85f else 1.05f)
         val pr = RectF(w - pad * 2 - rw * 0.55f, h - pad * 2 - pbh, w - pad * 2, h - pad * 2)
         ui.button(c, pr, "Jugar", Btn.PRIMARY, pbh * 0.42f) { start() }
     }
@@ -271,8 +281,9 @@ class SetupScreen(app: MainActivity, val game: GameId) : Screen(app) {
     private fun start() {
         Store.put("cfg_jug_${game.name}", players.toLong())
         Store.put("cfg_niv_${game.name}_$players", level.toLong())
+        if (game == GameId.TRIVIA) Store.put("cfg_grado", grade.toLong())
         val names = if (players == 2) Store.names() else arrayOf("Tú", if (game == GameId.TRES || game == GameId.CUATRO) "App" else "")
-        stage.push(game.create(app, Match(game, players, level, names)))
+        stage.push(game.create(app, Match(game, players, level, names, grade = grade)))
     }
 }
 
@@ -314,17 +325,17 @@ class RecordsScreen(app: MainActivity) : Screen(app) {
                 "${lv(g, it)}: " + (if (Store.has("mate_ok$it")) "${Store.long("mate_ok$it")}/10" else "-") +
                     (if (Store.has("mate_t$it")) ", 10/10 en ${t("mate_t$it")}" else "")
             }
-            GameId.TRIVIA -> listOf(
-                "Partidas: ${Store.long("trivia_partidas")}",
-                "Mejor (todas): " + (if (Store.has("trivia_ok0")) "${Store.long("trivia_ok0")}/10" else "-"),
-                "Mejor por materia: " + (1..4).joinToString(" ") { if (Store.has("trivia_ok$it")) "${Store.long("trivia_ok$it")}" else "-" })
+            GameId.TRIVIA -> {
+                fun b(i: Int) = if (Store.has("trivia_okg$i")) "${Store.long("trivia_okg$i")}/10" else "-"
+                listOf("Partidas: ${Store.long("trivia_partidas")}", "1.° y 2.°: ${b(0)}    3.° y 4.°: ${b(1)}", "5.° y 6.°: ${b(2)}")
+            }
             GameId.AHORCADO -> listOf(
                 "Palabras adivinadas: ${Store.long("ahorcado_palabras")}",
                 "Racha actual: ${Store.long("ahorcado_racha_actual")}",
                 "Mejor racha: ${Store.long("ahorcado_racha")}")
-            GameId.CORRE -> (0..2).map {
-                "${lv(g, it)}: " + (if (Store.has("corre_m$it")) "${Store.long("corre_m$it")} monedas" else "-") +
-                    (if (Store.has("corre_t$it")) ", ${t("corre_t$it")}" else "")
+            GameId.CORRE -> {
+                fun b(i: Int) = "${lv(g, i)} " + (if (Store.has("corre_m$i")) "${Store.long("corre_m$i")}" else "-")
+                listOf("Metas: ${Store.long("corre_metas")}   ·   Monedas:", (0..2).joinToString(" · ") { b(it) }, (3..5).joinToString(" · ") { b(it) })
             }
         }
     }

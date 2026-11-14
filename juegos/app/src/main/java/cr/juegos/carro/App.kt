@@ -249,6 +249,8 @@ class Match(
     val names: Array<String>,
     val starter: Int = 0,
     val tournament: Boolean = false,
+    /** Grado escolar (1..6) para la Trivia. */
+    val grade: Int = Store.long("cfg_grado", 4).toInt(),
     val onResult: ((Result) -> Unit)? = null,
 )
 

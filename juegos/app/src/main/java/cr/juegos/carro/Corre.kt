@@ -116,18 +116,23 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
         const val PH = 0.9f
         const val START = 2000L
         const val HEARTS = 3
-        val WORLDS = listOf("Pradera", "Playa", "Volcán")
+        val WORLDS = listOf("Pradera", "Playa", "Volcán", "Nieve", "Nubes", "Castillo")
+        /** Peso de cada tramo (0..8) en los mundos 4 a 6. */
+        val WEIGHTS = arrayOf(intArrayOf(2, 3, 2, 2, 3, 2, 2, 1, 1), intArrayOf(1, 4, 1, 4, 1, 2, 1, 1, 2), intArrayOf(1, 3, 2, 2, 3, 2, 3, 1, 2))
     }
 
     private class Pal(val skyTop: Int, val skyBot: Int, val far: Int, val near: Int, val top: Int, val dirt: Int, val dirtDark: Int, val block: Int, val blockDark: Int)
 
     private val pal = when (m.level) {
         1 -> Pal(0xFF46A9E0.toInt(), 0xFFFFE2B0.toInt(), 0xFF2E8BC0.toInt(), 0xFF3F9E5A.toInt(), 0xFFF7D98F.toInt(), 0xFFE2B76B.toInt(), 0xFFC79A4F.toInt(), 0xFFB07A42.toInt(), 0xFF7E5428.toInt())
+        3 -> Pal(0xFF8DBDE3.toInt(), 0xFFEAF4FB.toInt(), 0xFF9DB3C9.toInt(), 0xFFE3EEF7.toInt(), 0xFFFFFFFF.toInt(), 0xFF7F95A8.toInt(), 0xFF667B8E.toInt(), 0xFFBFE6F5.toInt(), 0xFF7FBCD6.toInt())
+        4 -> Pal(0xFF7FC2F5.toInt(), 0xFFFFE6F0.toInt(), 0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), 0xFFE4ECF6.toInt(), 0xFFC9D6E6.toInt(), 0xFFFFC94D.toInt(), 0xFFD6961A.toInt())
+        5 -> Pal(0xFF16171E.toInt(), 0xFF2E2833.toInt(), 0xFF2A2A33.toInt(), 0xFF22222A.toInt(), 0xFF9AA0AB.toInt(), 0xFF5E626C.toInt(), 0xFF484B54.toInt(), 0xFF8A6A4A.toInt(), 0xFF5E4630.toInt())
         2 -> Pal(0xFF1E0E1A.toInt(), 0xFF7A2E1E.toInt(), 0xFF3A1C1E.toInt(), 0xFF2A1416.toInt(), 0xFFE8743B.toInt(), 0xFF4D3434.toInt(), 0xFF3A2626.toInt(), 0xFF6A6A76.toInt(), 0xFF45454E.toInt())
         else -> Pal(0xFF5EBBF5.toInt(), 0xFFC8EEFF.toInt(), 0xFF8FD18A.toInt(), 0xFF5DB55A.toInt(), 0xFF5BCB4E.toInt(), 0xFF96612F.toInt(), 0xFF744A22.toInt(), 0xFFD9893B.toInt(), 0xFFA05E22.toInt())
     }
-    private val speed = when (m.level) { 1 -> 6.6f; 2 -> 7.2f; else -> 6f }
-    private val length = when (m.level) { 1 -> 230; 2 -> 260; else -> 200 }
+    private val speed = when (m.level) { 1 -> 6.6f; 2 -> 7.2f; 3 -> 7.4f; 4 -> 7.6f; 5 -> 7.8f; else -> 6f }
+    private val length = when (m.level) { 1 -> 230; 2 -> 260; 3 -> 270; 4 -> 280; 5 -> 300; else -> 200 }
 
     // Mapa
     private var top = IntArray(0)
@@ -205,9 +210,16 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
         var last = -1
         while (x < length - 14) {
             val prog = x.toFloat() / length
-            var k = rnd.nextInt(8)
-            if (k == last) k = rnd.nextInt(8)
-            if (k == 6 && d == 0) k = 0
+            var k: Int
+            if (d <= 2) {
+                k = rnd.nextInt(8)
+                if (k == last) k = rnd.nextInt(8)
+                if (k == 6 && d == 0) k = 0
+            } else {
+                val wt = WEIGHTS[d - 3]
+                fun roll(): Int { var r = rnd.nextInt(wt.sum()); for (i in wt.indices) { r -= wt[i]; if (r < 0) return i }; return 0 }
+                k = roll(); if (k == last) k = roll()
+            }
             last = k
             when (k) {
                 0 -> { // llano con monedas
@@ -217,7 +229,7 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
                 }
                 1 -> { // hueco con arco de monedas
                     x += 2
-                    val gw = 2 + rnd.nextInt(if (d == 0) 2 else if (prog > 0.5f) 3 else 2)
+                    val gw = 2 + rnd.nextInt(if (d == 0) 2 else if (d >= 3 && prog > 0.35f || prog > 0.5f) 3 else 2)
                     for (i in 0 until gw) top[x + i] = NONE
                     val arcN = gw + 2
                     for (i in 0 until arcN) {
@@ -244,7 +256,7 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
                 3 -> { // plataforma flotante (sobre un hueco en mundos 2 y 3)
                     x += 2
                     val pl = 3 + rnd.nextInt(3)
-                    val row = GR - 2
+                    val row = if (d >= 4 && rnd.nextInt(3) == 0) GR - 3 else GR - 2
                     for (i in 0 until pl) {
                         plat[x + i] = row
                         coins.add(Coin(x + i + 0.5f, row - 0.6f))
@@ -256,7 +268,8 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
                 4 -> { // escarabajos
                     val len = 7
                     enemies.add(Enemy(false, x + 4.5f, GR.toFloat(), GR.toFloat()))
-                    if (d > 0 && prog > 0.3f) enemies.add(Enemy(false, x + 6.2f, GR.toFloat(), GR.toFloat()))
+                    if (d >= 3 || d > 0 && prog > 0.3f) enemies.add(Enemy(false, x + 6.2f, GR.toFloat(), GR.toFloat()))
+                    if (d >= 5 && prog > 0.3f) enemies.add(Enemy(false, x + 2.9f, GR.toFloat(), GR.toFloat()))
                     coins.add(Coin(x + 4.5f, GR - 2.2f))
                     x += len
                 }
@@ -269,10 +282,18 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
                 }
                 6 -> { // pinchos
                     x += 3
-                    val sl = 1 + rnd.nextInt(if (prog > 0.5f) 2 else 1)
+                    val sl = 1 + rnd.nextInt(if (d >= 3 && prog > 0.4f) 3 else if (prog > 0.5f || d >= 3) 2 else 1)
                     for (i in 0 until sl) spike[x + i] = true
                     coins.add(Coin(x + sl / 2f, GR - 2.4f))
                     x += sl + 3
+                }
+                8 -> { // dos huecos con un pilar en medio
+                    x += 2
+                    top[x] = NONE; top[x + 1] = NONE
+                    top[x + 2] = GR - 1
+                    top[x + 3] = NONE; top[x + 4] = NONE
+                    for (i in 0..4) coins.add(Coin(x + i + 0.5f, GR - 2.2f - (if (i == 2) 0.6f else 0f)))
+                    x += 7
                 }
                 else -> { // fila alta de monedas
                     for (i in 2..5) coins.add(Coin(x + i + 0.5f, GR - 2.7f))
@@ -518,22 +539,36 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
             val tp = topAt(x)
             val l = sx(x.toFloat()); val r = sx(x + 1f) + 1f
             if (tp == NONE) {
-                if (m.level == 2) {
+                if (m.level == 4) continue
+                if (m.level == 2 || m.level == 5) {
                     val wave = sin(t / 300.0 + x).toFloat() * T * 0.06f
                     c.drawRect(l, sy(ROWS - 0.55f) + wave, r, h, G.fill(0xFFFF6A1F.toInt()))
                     c.drawRect(l, sy(ROWS - 0.55f) + wave, r, sy(ROWS - 0.42f) + wave, G.fill(0xFFFFC23D.toInt()))
                 } else {
-                    c.drawRect(l, sy(ROWS - 0.5f), r, h, G.fill(0xFF2E8BC0.toInt()))
-                    c.drawRect(l, sy(ROWS - 0.5f), r, sy(ROWS - 0.38f), G.fill(0xFF8FD3F0.toInt()))
+                    val icy = m.level == 3
+                    c.drawRect(l, sy(ROWS - 0.5f), r, h, G.fill(if (icy) 0xFF4F87AD.toInt() else 0xFF2E8BC0.toInt()))
+                    c.drawRect(l, sy(ROWS - 0.5f), r, sy(ROWS - 0.38f), G.fill(if (icy) 0xFFD6EEFA.toInt() else 0xFF8FD3F0.toInt()))
                 }
                 continue
             }
             c.drawRect(l, sy(tp.toFloat()), r, h, G.fill(pal.dirt))
-            for (yy in tp until ROWS) {
+            if (m.level == 5) {
+                val ln = G.stroke(pal.dirtDark, T * 0.05f)
+                for (yy in tp until ROWS) {
+                    c.drawLine(l, sy(yy + 1f), r, sy(yy + 1f), ln)
+                    val off = if (yy % 2 == 0) 0f else 0.5f
+                    c.drawLine(l + T * off, sy(yy.toFloat()), l + T * off, sy(yy + 1f), ln)
+                }
+            } else for (yy in tp until ROWS) {
                 val hsh = (x * 73 + yy * 31) and 7
                 if (hsh < 3) G.circle(c, l + T * (0.25f + hsh * 0.2f), sy(yy + 0.55f), T * 0.07f, pal.dirtDark)
             }
             c.drawRect(l, sy(tp.toFloat()), r, sy(tp + 0.22f), G.fill(pal.top))
+            if (m.level == 4) for (j in 0..2) G.circle(c, l + T * (0.17f + j * 0.33f), sy(tp + 0.08f), T * 0.2f, pal.top)
+            if (m.level == 3 && (x * 37) % 5 == 0) {
+                G.path.reset(); G.path.moveTo(l + T * 0.3f, sy(tp + 0.2f)); G.path.lineTo(l + T * 0.4f, sy(tp + 0.55f)); G.path.lineTo(l + T * 0.5f, sy(tp + 0.2f)); G.path.close()
+                c.drawPath(G.path, G.fill(0xFFD6EEFA.toInt()))
+            }
             if (topAt(x - 1) > tp) G.circle(c, l + T * 0.06f, sy(tp + 0.11f), T * 0.11f, pal.top)
             if (topAt(x + 1) > tp) G.circle(c, r - T * 0.06f, sy(tp + 0.11f), T * 0.11f, pal.top)
             if (x in spike.indices && spike[x]) drawSpikes(c, l, sy(tp.toFloat()), T)
@@ -558,7 +593,8 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
         // Enemigos
         for (e in enemies) {
             if (e.x < camX - 2 || e.x > camX + visible + 2) continue
-            if (e.bird) drawBird(c, sx(e.x), sy(e.y), T, now, e.deadT >= 0)
+            if (e.bird && m.level == 5) drawBat(c, sx(e.x), sy(e.y), T, now, e.deadT >= 0)
+            else if (e.bird) drawBird(c, sx(e.x), sy(e.y), T, now, e.deadT >= 0)
             else drawBeetle(c, sx(e.x), sy(e.y), T, now, e.deadT >= 0)
         }
         // Chispas
@@ -650,6 +686,74 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
                     G.circle(c, ex, ey, T * 0.05f, C.alpha(0xFFFFA040.toInt(), 0.7f))
                 }
             }
+            3 -> { // Nieve: montañas con nieve y copos
+                val off = camX * T * 0.15f
+                val gap = T * 12
+                var x = -(off % gap) - gap
+                while (x < w + gap) {
+                    G.path.reset(); G.path.moveTo(x, gy); G.path.lineTo(x + T * 5f, oy + T * 1.6f); G.path.lineTo(x + T * 10f, gy); G.path.close()
+                    c.drawPath(G.path, G.fill(pal.far))
+                    G.path.reset(); G.path.moveTo(x + T * 3.6f, oy + T * 2.6f); G.path.lineTo(x + T * 5f, oy + T * 1.6f); G.path.lineTo(x + T * 6.4f, oy + T * 2.6f)
+                    G.path.lineTo(x + T * 5.6f, oy + T * 2.3f); G.path.lineTo(x + T * 5f, oy + T * 2.7f); G.path.lineTo(x + T * 4.4f, oy + T * 2.3f); G.path.close()
+                    c.drawPath(G.path, G.fill(C.WHITE))
+                    x += gap
+                }
+                for (i in 0 until 40) {
+                    val fx = ((i * 157 + sin(t / 900.0 + i).toFloat() * T * 0.6f - camX * T * 0.5f) % w + w) % w
+                    val fy = oy + ((t * 0.03f * (1 + i % 3) + i * 71) % (h - oy))
+                    G.circle(c, fx, fy, T * (0.04f + (i % 3) * 0.02f), C.alpha(C.WHITE, 0.85f))
+                }
+            }
+            4 -> { // Nubes: arcoíris y nubes grandes
+                val off = camX * T * 0.08f
+                val rx = w * 0.7f - off % (w * 1.6f) + w * 0.4f
+                val cols = intArrayOf(0x66FF6B6B, 0x66FFB547, 0x66FFE15A, 0x664CD08A, 0x665CC8FF, 0x669B7BFF)
+                for ((j, col) in cols.withIndex()) {
+                    G.r.set(rx - T * (5f - j * 0.35f), oy + T * (1.2f + j * 0.35f), rx + T * (5f - j * 0.35f), oy + T * (11f - j * 0.35f))
+                    c.drawArc(G.r, 180f, 180f, false, G.stroke(col, T * 0.36f))
+                }
+                for (layer in 0..1) {
+                    val lo = camX * T * (0.12f + layer * 0.15f)
+                    val cg = T * (9 + layer * 4)
+                    var x = -(lo % cg) - cg
+                    var i = 0
+                    while (x < w + cg) {
+                        val cy = oy + T * (if (layer == 0) 1.5f + (i % 2) * 1.2f else 5.6f)
+                        val col = if (layer == 0) 0xCCFFFFFF.toInt() else 0xFFFFFFFF.toInt()
+                        G.oval(c, x + T * 2, cy, T * 1.6f, T * 0.6f, col)
+                        G.oval(c, x + T * 2.8f, cy - T * 0.45f, T * 1f, T * 0.7f, col)
+                        G.oval(c, x + T * 1.3f, cy - T * 0.25f, T * 0.7f, T * 0.5f, col)
+                        x += cg; i++
+                    }
+                }
+            }
+            5 -> { // Castillo: muro de piedra, ventanas y antorchas
+                val off = camX * T * 0.4f
+                val bw = T * 1.2f; val bh = T * 0.6f
+                val ln = G.stroke(0xFF1C1C23.toInt(), T * 0.04f)
+                var yy = oy; var row = 0
+                while (yy < gy) {
+                    c.drawLine(0f, yy, w, yy, ln)
+                    var xx = -(off % bw) - bw + (if (row % 2 == 0) 0f else bw / 2)
+                    while (xx < w) { c.drawLine(xx, yy, xx, yy + bh, ln); xx += bw }
+                    yy += bh; row++
+                }
+                val gap = T * 7
+                var x = -(off % gap) - gap
+                while (x < w + gap) {
+                    val wx = x + T * 2
+                    G.r.set(wx - T * 0.55f, oy + T * 1.6f, wx + T * 0.55f, oy + T * 4f)
+                    c.drawRoundRect(G.r, T * 0.55f, T * 0.55f, G.fill(0xFF0D0E14.toInt()))
+                    G.circle(c, wx + T * 0.2f, oy + T * 2.3f, T * 0.06f, 0xFFFFF3C4.toInt())
+                    val tx = x + T * 5.5f; val ty = oy + T * 3.4f
+                    c.drawRect(tx - T * 0.08f, ty, tx + T * 0.08f, ty + T * 0.7f, G.fill(0xFF6B4A2A.toInt()))
+                    val fl = (sin(t / 60.0 + x).toFloat() * 0.5f + 0.5f)
+                    G.circle(c, tx, ty - T * 0.15f, T * (0.7f + 0.15f * fl), C.alpha(0xFFFFA040.toInt(), 0.12f))
+                    G.oval(c, tx, ty - T * 0.12f, T * 0.16f, T * (0.24f + 0.06f * fl), 0xFFFF7A1F.toInt())
+                    G.oval(c, tx, ty - T * 0.08f, T * 0.08f, T * 0.13f, 0xFFFFD34D.toInt())
+                    x += gap
+                }
+            }
             else -> { // Pradera: nubes y colinas
                 val coff = camX * T * 0.1f
                 val cg = T * 11
@@ -663,7 +767,7 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
                 }
             }
         }
-        if (m.level != 1) {
+        if (m.level == 0 || m.level == 2 || m.level == 3) {
             c.save(); c.clipRect(0f, oy, w, gy + T * 0.3f)
             val off = camX * T * 0.35f
             val gap = T * 8
@@ -737,6 +841,29 @@ class CorreScreen(app: MainActivity, m: Match) : GameScreen(app, m) {
         G.circle(c, cx - T * 0.42f, bottom - T * 0.3f, T * 0.2f, C.DARK)
         G.circle(c, cx - T * 0.5f, bottom - T * 0.35f, T * 0.07f, C.WHITE)
         G.circle(c, cx - T * 0.53f, bottom - T * 0.35f, T * 0.035f, C.DARK)
+    }
+
+    private fun drawBat(c: Canvas, cx: Float, cy: Float, T: Float, now: Long, dead: Boolean) {
+        val body = 0xFF5B3A78.toInt()
+        if (dead) { G.oval(c, cx, cy, T * 0.3f, T * 0.12f, C.alpha(body, 0.6f)); return }
+        val flap = sin(now / 60.0).toFloat()
+        for (sgn in floatArrayOf(-1f, 1f)) {
+            G.path.reset()
+            G.path.moveTo(cx, cy - T * 0.05f)
+            G.path.lineTo(cx + sgn * T * 0.55f, cy - T * 0.05f - flap * T * 0.3f)
+            G.path.lineTo(cx + sgn * T * 0.45f, cy + T * 0.12f)
+            G.path.lineTo(cx + sgn * T * 0.3f, cy + T * 0.05f)
+            G.path.lineTo(cx + sgn * T * 0.18f, cy + T * 0.14f)
+            G.path.close()
+            c.drawPath(G.path, G.fill(C.mix(body, C.DARK, 0.3f)))
+        }
+        G.circle(c, cx, cy, T * 0.22f, body)
+        for (sgn in floatArrayOf(-1f, 1f)) {
+            G.path.reset(); G.path.moveTo(cx + sgn * T * 0.06f, cy - T * 0.18f); G.path.lineTo(cx + sgn * T * 0.16f, cy - T * 0.34f); G.path.lineTo(cx + sgn * T * 0.2f, cy - T * 0.12f); G.path.close()
+            c.drawPath(G.path, G.fill(body))
+        }
+        G.circle(c, cx - T * 0.08f, cy - T * 0.04f, T * 0.06f, 0xFFFFE15A.toInt())
+        G.circle(c, cx + T * 0.08f, cy - T * 0.04f, T * 0.06f, 0xFFFFE15A.toInt())
     }
 
     private fun drawBird(c: Canvas, cx: Float, cy: Float, T: Float, now: Long, dead: Boolean) {
