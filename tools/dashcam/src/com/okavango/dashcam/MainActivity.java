@@ -57,7 +57,7 @@ public class MainActivity extends Activity {
     private ArrayAdapter<File> adapter;
     private TextView videosHeader;
     // Ajustes
-    private Switch autoSwitch, impactSwitch, openSwitch, trackSwitch;
+    private Switch autoSwitch, impactSwitch, openSwitch, trackSwitch, sendMasterSwitch;
     private TextView trackId, trackLine, photoLine, photoVal;
     private Switch photoSwitch;
     private TextView speedVal, stopSpeedVal, gpsLine, storageLine, maxVal;
@@ -411,7 +411,27 @@ public class MainActivity extends Activity {
         stip.setPadding(0, dp(6), 0, 0);
         stCard.addView(stip);
 
-        LinearLayout trCard = card(col, "Rastreo GPS");
+        LinearLayout trCard = card(col, "Envío a ubicacr");
+        sendMasterSwitch = new Switch(this);
+        sendMasterSwitch.setText("Enviar datos a " + Tracker.HOST + " (ubicación y fotos)   ");
+        sendMasterSwitch.setTextColor(Color.WHITE);
+        sendMasterSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        sendMasterSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean on) {
+                RecorderService s = RecorderService.instance;
+                if (s == null || syncing) return;
+                if (s.tracker != null) s.tracker.setEnabled(on);
+                if (s.photos != null) s.photos.setEnabled(on);
+                syncing = true;
+                trackSwitch.setChecked(on);
+                photoSwitch.setChecked(on);
+                syncing = false;
+            }
+        });
+        trCard.addView(sendMasterSwitch);
+        TextView mtip = text("Un solo botón para prender o apagar todo el envío al servidor. Abajo podés controlar la ubicación y las fotos por separado.", 15, GREY);
+        mtip.setPadding(0, dp(6), 0, dp(4));
+        trCard.addView(mtip);
         trackSwitch = new Switch(this);
         trackSwitch.setText("Enviar la ubicación a " + Tracker.HOST + "   ");
         trackSwitch.setTextColor(Color.WHITE);
@@ -593,6 +613,8 @@ public class MainActivity extends Activity {
                 openSwitch.setChecked(s.openOnAcc);
                 if (s.tracker != null) trackSwitch.setChecked(s.tracker.enabled);
                 if (s.photos != null) photoSwitch.setChecked(s.photos.enabled);
+                boolean anyOn = (s.tracker != null && s.tracker.enabled) || (s.photos != null && s.photos.enabled);
+                sendMasterSwitch.setChecked(anyOn);
                 syncing = false;
                 File cur = s.currentFile;
                 File dir = cur != null ? cur.getParentFile() : Storage.recordDir();
