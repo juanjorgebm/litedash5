@@ -845,6 +845,7 @@
     <string name="photos_syncing">Bajando…</string>
     <string name="photos_link_file">Leer de la USB</string>
     <string name="photos_view">Ver las %1$d fotos</string>
+    <string name="photos_count">%1$d fotos</string>
     <string name="photos_time">Cuánto dura cada foto</string>
     <string name="photos_seconds">%1$d s</string>
     <string name="photos_minutes">%1$d min</string>

@@ -332,8 +332,94 @@ fun PhotosScreen(close: () -> Unit) {
         }
         return
     }
-    Box(Modifier.fillMaxSize().background(Color.Black).clickable(remember { MutableInteractionSource() }, indication = null, onClick = close)) {
-        Slideshow(files, 1920, ContentScale.Fit, Modifier.fillMaxSize())
-        IconButton(Icons.settings, { setup = true }, Modifier.align(Alignment.TopEnd).padding(16.dp).alpha(0.55f), background = Color(0x66000000), color = Color.White)
+    Viewer(files, close) { setup = true }
+}
+
+/**
+ * Las fotos en grande: pasan solas, y con botones para ir a la anterior o la siguiente, pausar, o ver la galería en
+ * pequeño y elegir una. Los botones se esconden solos; un toque en la foto los vuelve a mostrar.
+ */
+@Composable
+private fun Viewer(files: List<File>, close: () -> Unit, openSetup: () -> Unit) {
+    val context = LocalContext.current
+    val order = remember(files.size) { files.shuffled() }
+    var index by remember { mutableIntStateOf(0) }
+    var paused by remember { mutableStateOf(false) }
+    var gallery by remember { mutableStateOf(false) }
+    var controls by remember { mutableStateOf(true) }
+    var touched by remember { mutableIntStateOf(0) }
+    var shown by remember { mutableStateOf<ImageBitmap?>(null) }
+    val fade = remember { Animatable(0f) }
+    fun go(step: Int) { if (order.isNotEmpty()) index = ((index + step) % order.size + order.size) % order.size; touched++ }
+
+    // Abre la foto que toca, con un fundido.
+    LaunchedEffect(index, order) {
+        val file = order.getOrNull(index) ?: return@LaunchedEffect
+        val next = withContext(Dispatchers.IO) { PhotoAlbum.decode(file, 1920) }
+        if (shown != null) fade.animateTo(0f, tween(300))
+        shown = next
+        fade.animateTo(1f, tween(500))
+    }
+    // Pasa sola a la siguiente (se reinicia al tocar un botón).
+    LaunchedEffect(index, paused, gallery, touched) {
+        if (paused || gallery || order.size < 2) return@LaunchedEffect
+        var waited = 0
+        while (waited < PhotoAlbum.seconds(context)) { delay(1_000); waited++ }
+        index = (index + 1) % order.size
+    }
+    // Los botones se esconden a los 6 s sin tocar nada.
+    LaunchedEffect(controls, touched) { if (controls && !gallery) { delay(6_000); controls = false } }
+
+    if (gallery) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                androidx.compose.foundation.lazy.grid.GridCells.Adaptive(220.dp),
+                Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 88.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(order.size) { i ->
+                    Thumb(order[i], i == index) { index = i; gallery = false; controls = true; touched++ }
+                }
+            }
+            Row(Modifier.align(Alignment.TopStart).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconButton(Icons.close, { gallery = false; controls = true; touched++ }, background = Color(0x99000000), color = Color.White)
+                Label(stringResource(R.string.photos_count, order.size), Typography.subtitle, Color.White, 1, Modifier.align(Alignment.CenterVertically))
+            }
+        }
+        return
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black).clickable(remember { MutableInteractionSource() }, indication = null) { controls = !controls; touched++ }) {
+        shown?.let { Image(it, null, Modifier.fillMaxSize().alpha(fade.value), contentScale = ContentScale.Fit) }
+        if (controls) {
+            val dim = Color(0x99000000)
+            Row(Modifier.align(Alignment.TopStart).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconButton(Icons.close, close, size = 72.dp, background = dim, color = Color.White)
+            }
+            Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconButton(Icons.apps, { gallery = true }, size = 72.dp, background = dim, color = Color.White)
+                IconButton(Icons.settings, openSetup, size = 72.dp, background = dim, color = Color.White)
+            }
+            IconButton(Icons.previous, { go(-1) }, Modifier.align(Alignment.CenterStart).padding(16.dp), size = 96.dp, background = dim, color = Color.White)
+            IconButton(Icons.next, { go(1) }, Modifier.align(Alignment.CenterEnd).padding(16.dp), size = 96.dp, background = dim, color = Color.White)
+            Row(Modifier.align(Alignment.BottomCenter).padding(16.dp).clip(RoundedCornerShape(40.dp)).background(dim).padding(horizontal = 18.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconButton(if (paused) Icons.play else Icons.pause, { paused = !paused; touched++ }, size = 64.dp, color = Color.White)
+                if (order.isNotEmpty()) Label("${index + 1} / ${order.size}", Typography.subtitle, Color.White, 1)
+            }
+        }
+    }
+}
+
+/** Una foto pequeña de la galería (se abre en otro hilo para no trabar la lista). */
+@Composable
+private fun Thumb(file: File, current: Boolean, onClick: () -> Unit) {
+    val c = LocalColors.current
+    var picture by remember(file) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file) { picture = withContext(Dispatchers.IO) { PhotoAlbum.decode(file, 320) } }
+    Box(
+        Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(12.dp)).background(if (current) c.accent else Color(0xFF222222)).clickable(onClick = onClick).padding(if (current) 4.dp else 0.dp),
+    ) {
+        picture?.let { Image(it, null, Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop) }
     }
 }
