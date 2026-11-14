@@ -281,6 +281,31 @@ object Assistant {
     class Chat(val id: String, val title: String, val at: Long)
 
     @Volatile private var folder: File? = null
+    @Volatile private var app: Context? = null
+
+    /**
+     * Dónde está el carro ahora, para preguntas de lugares: la última posición del GPS (o de la red) y, si la pantalla
+     * puede, el nombre de la calle y el pueblo. Si no hay nada, [fallback] (lo que sabe el inicio).
+     */
+    @SuppressLint("MissingPermission")
+    private fun locate(fallback: String): String {
+        val context = app ?: return fallback
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager ?: return fallback
+        // El reloj de la pantalla no es confiable: se elige la más reciente por el tiempo desde que se prendió.
+        val best = listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER, android.location.LocationManager.PASSIVE_PROVIDER)
+            .mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }
+            .maxByOrNull { it.elapsedRealtimeNanos } ?: return fallback
+        val lat = "%.5f".format(Locale.US, best.latitude)
+        val lon = "%.5f".format(Locale.US, best.longitude)
+        val address = runCatching {
+            if (!android.location.Geocoder.isPresent()) null
+            else android.location.Geocoder(context, Locale.forLanguageTag("es-CR")).getFromLocation(best.latitude, best.longitude, 1)?.firstOrNull()?.let { a ->
+                (0..a.maxAddressLineIndex).joinToString(", ") { a.getAddressLine(it) }.ifBlank { listOfNotNull(a.thoroughfare, a.locality, a.adminArea).joinToString(", ") }
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+        return "El carro está ahora en la latitud $lat, longitud $lon" + (address?.let { " ($it)" } ?: "") +
+            ". Para preguntas de lugares cercanos (cerca de mí, por aquí, dónde hay, cuánto falta), usa esta ubicación como punto de partida y busca lo que esté más cerca."
+    }
     private var chatId = newId()
     var chats by mutableStateOf<List<Chat>>(emptyList())
         private set
@@ -362,6 +387,7 @@ object Assistant {
 
     /** Prepara la voz de la pantalla (si tiene un motor de voz con español). */
     fun prepareVoice(context: Context) {
+        app = context.applicationContext
         if (tts != null) return
         runCatching {
             tts = TextToSpeech(context.applicationContext) { status ->
@@ -659,7 +685,7 @@ object Assistant {
                     val built = StringBuilder()
                     var links: List<Link> = emptyList()
                     val result = runCatching {
-                        answer(clean, history, heard, where, { links = it }) { delta ->
+                        answer(clean, history, heard, locate(where), { links = it }) { delta ->
                             built.append(delta)
                             val shown = splitPlace(built.toString()).first
                             main.post {
