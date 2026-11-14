@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -16,6 +17,7 @@ import android.speech.tts.TextToSpeech
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,6 +52,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -80,7 +85,7 @@ import java.util.Locale
  * así que se graba el audio (WAV de 16 kHz) y Gemini lo entiende directo. La clave se guarda solo en la pantalla.
  */
 object Assistant {
-    class Message(val mine: Boolean, val text: String, val error: Boolean = false)
+    class Message(val mine: Boolean, val text: String, val error: Boolean = false, val image: ImageBitmap? = null)
 
     private const val RATE = 16_000
     private const val MAX_SECONDS = 45
@@ -97,6 +102,16 @@ object Assistant {
     private val ANSWER_MODELS = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite")
 
     /** La voz de Gemini, para cuando la pantalla no trae voz propia (la del carro no tiene). */
+    /** Para dibujar: los de Gemini que hacen imágenes (si la clave los tiene gratis); si no, Pollinations, que es libre. */
+    private val IMAGE_MODELS = listOf("gemini-2.5-flash-image", "gemini-2.0-flash-preview-image-generation", "gemini-2.5-flash-image-preview")
+
+    /** "Hazme una imagen de…", "dibuja…", "genera una foto…": se contesta con una imagen y no con texto. */
+    private val WANTS_IMAGE = Regex(
+        "(?i)(\\b(dibuj\\p{L}*|pint\\p{L}*|ilustr\\p{L}*)\\b)|(\\b(genera\\p{L}*|crea\\p{L}*|haz\\p{L}*|hac\\p{L}*|mu[eé]stra\\p{L}*|quiero|dame|manda\\p{L}*|draw|make|create|generate)\\b.{0,40}\\b(imagen|im[aá]genes|foto\\p{L}*|dibujo|ilustraci[oó]n|image|picture|drawing)\\b)",
+    )
+
+    fun wantsImage(text: String) = WANTS_IMAGE.containsMatchIn(text)
+
     private val VOICE_MODELS = listOf("gemini-2.5-flash-preview-tts", "gemini-2.5-flash-tts")
     private const val VOICE_RATE = 24_000
 
@@ -425,6 +440,22 @@ object Assistant {
                     text == null -> messages += Message(true, heard)
                 }
                 if (question.isFailure || heard.isEmpty()) { busy = false; return@post }
+                if (wantsImage(heard)) {
+                    messages += Message(false, "Haciendo la imagen…")
+                    val slot = messages.lastIndex
+                    Thread {
+                        val result = runCatching { image(clean, heard) }
+                        main.post {
+                            busy = false
+                            if (slot >= messages.size) return@post
+                            val made = result.getOrNull()
+                            messages[slot] = if (made != null) Message(false, made.second, image = made.first)
+                            else Message(false, result.exceptionOrNull()?.message ?: "No se pudo hacer la imagen.", error = true)
+                            if (made != null && speakAnswer) speak(clean, "Listo, aquí está la imagen.")
+                        }
+                    }.start()
+                    return@post
+                }
                 // La respuesta empieza vacía y se va llenando.
                 messages += Message(false, "")
                 val slot = messages.lastIndex
@@ -509,6 +540,78 @@ object Assistant {
                 .put("generationConfig", quick(model))
         }, stream = true, readMs = 30_000) { json -> textOf(json).takeIf { it.isNotEmpty() }?.let(onText) }
     }
+
+    /**
+     * Hace la imagen que se pidió: primero con Gemini (si la clave tiene un modelo de imágenes con cupo) y si no, con
+     * Pollinations, que es gratis y no pide clave. Devuelve la imagen y un texto corto para la burbuja.
+     */
+    private fun image(key: String, request: String): Pair<ImageBitmap, String> {
+        var made: ByteArray? = null
+        var caption = ""
+        val have = (models ?: known)?.map { it.id }?.filter { "image" in it && "imagen" !in it }.orEmpty()
+        val list = (working["imagen"]?.let { listOf(it) }.orEmpty() + have + IMAGE_MODELS).distinct().take(4)
+        val gemini = runCatching {
+            call(key, "imagen", list, { _ ->
+                JSONObject()
+                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(part(request + "\n(Formato horizontal, 16:9. Si escribes algo, que sea en español y muy corto.)")))))
+                    .put("generationConfig", JSONObject().put("responseModalities", JSONArray().put("TEXT").put("IMAGE")))
+            }, stream = false, readMs = 90_000) { json ->
+                val parts = json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: return@call
+                for (i in 0 until parts.length()) {
+                    val p = parts.optJSONObject(i) ?: continue
+                    val data = (p.optJSONObject("inlineData") ?: p.optJSONObject("inline_data"))?.optString("data")
+                    if (!data.isNullOrEmpty()) made = Base64.decode(data, Base64.DEFAULT)
+                    else if (!p.optBoolean("thought", false)) caption += p.optString("text")
+                }
+            }
+        }
+        made?.let { bytes -> decode(bytes)?.let { return it to caption.trim().ifEmpty { "Listo, aquí está." } } }
+        // Sin Gemini: se describe en inglés (así dibuja mejor) y se pide a Pollinations.
+        val prompt = runCatching { englishPrompt(key, request) }.getOrNull()?.takeIf { it.isNotBlank() } ?: request
+        val bytes = runCatching { pollinations(prompt) }
+        val bitmap = bytes.getOrNull()?.let(::decode)
+        if (bitmap != null) return bitmap to "Listo, aquí está."
+        val why = gemini.exceptionOrNull()?.message?.lineSequence()?.firstOrNull().orEmpty()
+        error("No se pudo hacer la imagen. ${bytes.exceptionOrNull()?.let { "Pollinations: ${it.javaClass.simpleName} ${it.message.orEmpty().take(80)}" }.orEmpty()} ${if (why.isNotEmpty()) "Gemini: $why" else ""}".trim())
+    }
+
+    /** Pasa el pedido a una descripción en inglés para dibujar (con el modelo de texto, que es rápido). */
+    private fun englishPrompt(key: String, request: String): String {
+        var out = ""
+        call(key, "texto", ranked(key, "texto", TRANSCRIBE_MODELS), { model ->
+            JSONObject()
+                .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(part("Write a short, vivid English image-generation prompt (max 60 words, no quotes, nothing else) for this request: $request")))))
+                .put("generationConfig", quick(model, JSONObject().put("temperature", 0.4)))
+        }, stream = false, readMs = 20_000) { json -> out = textOf(json) }
+        return out.trim().trim('"').take(400)
+    }
+
+    private fun pollinations(prompt: String): ByteArray {
+        val seed = (System.currentTimeMillis() % 100_000).toInt()
+        val url = "https://image.pollinations.ai/prompt/" + java.net.URLEncoder.encode(prompt, "UTF-8").replace("+", "%20") +
+            "?width=1280&height=720&nologo=true&seed=$seed"
+        val connection = URL(url).openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 90_000
+            connection.instanceFollowRedirects = true
+            connection.setRequestProperty("User-Agent", "LiteDash")
+            val code = connection.responseCode
+            check(code in 200..299) { "código $code" }
+            return connection.inputStream.use { it.readBytes() }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** Achica la imagen a un tamaño que la pantalla aguante sin quedarse sin memoria. */
+    private fun decode(bytes: ByteArray): ImageBitmap? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= 1024 || bounds.outHeight / (sample * 2) >= 1024) sample *= 2
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+    }.getOrNull()
 
     private fun textOf(json: JSONObject): String {
         val found = StringBuilder()
@@ -817,6 +920,15 @@ private fun Bubble(m: Assistant.Message) {
                 )
                 .padding(horizontal = 18.dp, vertical = 12.dp),
         ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            m.image?.let { picture ->
+                Image(
+                    picture,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().height(320.dp).clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Fit,
+                )
+            }
             Label(
                 m.text.ifEmpty { "…" },
                 Typography.subtitle,
@@ -826,6 +938,7 @@ private fun Bubble(m: Assistant.Message) {
                     else -> c.text
                 },
             )
+            }
         }
     }
 }
