@@ -58,6 +58,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 
 /**
  * La biblioteca del reproductor propio, dentro de la música en grande: la memoria USB
@@ -242,7 +245,9 @@ internal fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier, showTabs: Bo
     val here = remember { Radio.here(context) }
     // null = buscando; la lista (y si salió por ubicación o por país).
     // Si los servidores no contestan, la última lista que sí llegó (guardada).
-    val nearby by produceState<List<Station>?>(null) {
+    // Se muestra al momento la última lista guardada (sin internet) y se actualiza cuando la radio ya suena.
+    val nearby by produceState(remember { store.nearbyCache().ifEmpty { null } }) {
+        radioFirst()
         value = withContext(Dispatchers.IO) {
             val fresh = if (here != null) Radio.nearby(context, here) else Radio.country(context)
             if (fresh.isNotEmpty()) { store.setNearbyCache(fresh); fresh } else store.nearbyCache()
@@ -252,6 +257,7 @@ internal fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier, showTabs: Bo
     LaunchedEffect(Unit) {
         if (store.favoritesSeeded) return@LaunchedEffect
         if (favorites.isNotEmpty()) { store.favoritesSeeded = true; return@LaunchedEffect }
+        radioFirst()
         val top = withContext(Dispatchers.IO) { Radio.country(context) }.take(SEED_FAVORITES)
         if (top.isEmpty()) return@LaunchedEffect // sin red: se intenta la próxima vez
         store.setFavorites(top)
@@ -267,6 +273,7 @@ internal fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier, showTabs: Bo
     val top by produceState<List<Station>?>(null, tab, query.length < 2) {
         value = null
         if (tab != RadioTab.SEARCH || query.length >= 2) return@produceState
+        radioFirst()
         value = withContext(Dispatchers.IO) {
             val a = Radio.country(context).take(25)
             val b = Radio.world(context).take(25)
@@ -368,6 +375,16 @@ internal fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier, showTabs: Bo
  * De [source] (lo que dio el directorio) deja solo las estaciones que suenan ahora: las prueba de 10 en 10, en orden de
  * popularidad, y la lista va creciendo; para al juntar [WORKING_MAX]. El segundo valor es si sigue comprobando.
  */
+/**
+ * Mientras una radio está arrancando, lo demás (listas, sugeridas, pruebas de estaciones) espera hasta [max] para no
+ * quitarle internet: primero tiene que sonar.
+ */
+internal suspend fun radioFirst(max: Long = 8_000) {
+    withTimeoutOrNull(max) {
+        snapshotFlow { Player.state.source == PlayerSource.RADIO && Player.state.buffering }.first { !it }
+    }
+}
+
 @Composable
 internal fun rememberWorking(source: List<Station>?): Pair<List<Station>?, Boolean> {
     val context = LocalContext.current
@@ -378,6 +395,8 @@ internal fun rememberWorking(source: List<Station>?): Pair<List<Station>?, Boole
         withContext(Dispatchers.IO) {
             for (batch in source.take(WORKING_SCAN).chunked(10)) {
                 if (ok.size >= WORKING_MAX) break
+                // Probar estaciones abre su audio: mientras la que elegiste arranca, se espera.
+                radioFirst()
                 val checked = coroutineScope { batch.map { st -> async { st to Radio.isAlive(context, st) } }.awaitAll() }
                 ok += checked.filter { it.second }.map { it.first }
                 value = ok.toList() to true

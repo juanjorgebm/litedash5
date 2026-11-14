@@ -22,7 +22,9 @@ class StreamProxy(private val context: Context, private val url: String) {
         Thread {
             while (!closed) {
                 val socket = runCatching { server.accept() }.getOrNull() ?: break
-                Thread { serve(socket) }.apply { isDaemon = true }.start()
+                // Un error aquí (se cortó la red, MediaPlayer colgó al cambiar de estación) cerraba la app entera:
+                // en un hilo propio, una excepción sin atrapar tumba el proceso.
+                Thread { runCatching { serve(socket) } }.apply { isDaemon = true }.start()
             }
         }.apply { isDaemon = true }.start()
     }

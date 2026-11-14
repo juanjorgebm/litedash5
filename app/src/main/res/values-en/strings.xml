@@ -822,4 +822,5 @@
     <string name="photos_view">View the %1$d photos</string>
     <string name="assistant_hearing">Writing down what you said…</string>
     <string name="assistant_speaking">Reading the answer…</string>
+    <string name="crash_note">LiteDash restarted after an error: %1$s</string>
 </resources>

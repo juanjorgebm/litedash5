@@ -23,4 +23,5 @@
     <string name="radio_settings">Ajustes</string>
     <string name="car_player">Música del carro</string>
     <string name="car_player_help">Controla la música del carro con estos botones.</string>
+    <string name="radio_tap_play">Toca play para escucharla</string>
 </resources>

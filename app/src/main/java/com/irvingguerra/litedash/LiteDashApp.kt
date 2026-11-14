@@ -63,6 +63,7 @@ class LiteDashApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashNote.install(this)
         // Antes de leer cualquier ajuste (también el idioma de attachBaseContext): nombres en inglés desde la 1.4.47.
         StorageMigration.run(this)
         // Después de la migración (mueve la carpeta de los autos): mientras Android arma la pantalla.

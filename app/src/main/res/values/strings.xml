@@ -843,4 +843,5 @@
     <string name="photos_view">Ver las %1$d fotos</string>
     <string name="assistant_hearing">Escribiendo lo que dijiste…</string>
     <string name="assistant_speaking">Leyendo la respuesta…</string>
+    <string name="crash_note">LiteDash se reinició por un error: %1$s</string>
 </resources>

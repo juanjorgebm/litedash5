@@ -256,6 +256,9 @@ class MusicRepository(private val context: Context) {
      */
     var ownPlay: ((SourceKind, (Boolean) -> Unit) -> Unit)? = null
 
+    /** El nombre de la última estación de internet (la que suena al tocar play); null si nunca sonó una. */
+    var ownRadioLast: (() -> String?)? = null
+
     /** Pausa la USB del reproductor propio y cancela un arranque pendiente (lo pone el app). */
     var ownPause: (() -> Unit)? = null
 
