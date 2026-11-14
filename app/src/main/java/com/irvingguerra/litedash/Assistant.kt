@@ -727,13 +727,41 @@ fun AssistantTile(onOpen: () -> Unit) {
             val side = (minOf(maxWidth, maxHeight) * 0.5f).coerceAtMost(72.dp)
             val tall = maxHeight > 90.dp
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.mic, c.accent, side)
+                Sparkle(side)
                 if (tall) {
                     Spacer(Modifier.height(8.dp))
                     Label(stringResource(R.string.tile_assistant), Typography.small.copy(fontWeight = FontWeight.Medium), maxLines = 1)
                 }
             }
         }
+    }
+}
+
+/** Estrella de cuatro puntas en azul y morado, como la del asistente de Google. */
+@Composable
+fun Sparkle(size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val cx = w / 2
+        val cy = h / 2
+        // Cada lado es una curva que se mete hacia el centro: puntas finas y centro gordito.
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(cx, 0f)
+            quadraticTo(cx + w * 0.06f, cy - h * 0.06f, w, cy)
+            quadraticTo(cx + w * 0.06f, cy + h * 0.06f, cx, h)
+            quadraticTo(cx - w * 0.06f, cy + h * 0.06f, 0f, cy)
+            quadraticTo(cx - w * 0.06f, cy - h * 0.06f, cx, 0f)
+            close()
+        }
+        drawPath(
+            path,
+            androidx.compose.ui.graphics.Brush.linearGradient(
+                listOf(Color(0xFF1C7DF2), Color(0xFF4F8EF7), Color(0xFF9B72CB), Color(0xFFD96570)),
+                start = androidx.compose.ui.geometry.Offset(0f, h),
+                end = androidx.compose.ui.geometry.Offset(w, 0f),
+            ),
+        )
     }
 }
 
