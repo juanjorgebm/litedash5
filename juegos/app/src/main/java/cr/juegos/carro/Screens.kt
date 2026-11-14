@@ -26,7 +26,9 @@ enum class GameId(val title: String, val desc: String) {
     AHORCADO("Ahorcado",
         "Adivina la palabra eligiendo letras.\nCada letra que no está dibuja una parte del ahorcado:\ntienes 6 errores. Con 2 jugadores se turnan\n3 palabras cada uno y gana quien adivine más."),
     CORRE("Corre Coco",
-        "Coco corre solo: toca la pantalla para saltar.\nMantén el dedo para saltar más alto y toca otra vez\nen el aire para un doble salto. Junta monedas,\nsalta sobre los bichos y llega a la bandera.");
+        "Coco corre solo: toca la pantalla para saltar.\nMantén el dedo para saltar más alto y toca otra vez\nen el aire para un doble salto. Junta monedas,\nsalta sobre los bichos y llega a la bandera."),
+    AJEDREZ("Ajedrez",
+        "Toca una pieza para ver a dónde puede ir y toca la casilla.\nGana quien le haga jaque mate al rey del otro.\nJuega contra la app o con tu acompañante.\nEl botón de la flecha deshace la última jugada.");
 
     fun levels(players: Int): List<String> = when (this) {
         SOLITARIO -> listOf("Robar 1", "Robar 3")
@@ -38,6 +40,7 @@ enum class GameId(val title: String, val desc: String) {
         MATE -> listOf("Sumas y restas", "+ − ×", "+ − × ÷")
         TRIVIA -> listOf("Todas", "Mate", "Español", "Ciencias", "Sociales")
         AHORCADO -> listOf("Fácil", "Normal", "Difícil")
+        AJEDREZ -> if (players == 1) listOf("Fácil", "Normal", "Difícil") else emptyList()
         CORRE -> listOf("Pradera", "Playa", "Volcán", "Nieve", "Nubes", "Castillo")
     }
 
@@ -46,7 +49,7 @@ enum class GameId(val title: String, val desc: String) {
     }
 
     fun defaultLevel(players: Int) = when (this) {
-        SOLITARIO, TRIVIA, CORRE -> 0
+        SOLITARIO, TRIVIA, CORRE, AJEDREZ -> 0
         else -> if (levels(players).size >= 2) 1 else 0
     }
 
@@ -60,6 +63,7 @@ enum class GameId(val title: String, val desc: String) {
         MATE, TRIVIA -> QuizScreen(app, m)
         AHORCADO -> AhorcadoScreen(app, m)
         CORRE -> CorreScreen(app, m)
+        AJEDREZ -> AjedrezScreen(app, m)
     }
 }
 
@@ -142,6 +146,15 @@ object GameArt {
                 c.drawLine(cx + s * 0.12f, cy - s * 0.1f, cx + s * 0.12f, cy + s * 0.08f, w2)
                 c.drawLine(cx + s * 0.12f, cy - s * 0.04f, cx + s * 0.22f, cy + s * 0.04f, w2)
                 G.text(c, "_ A _ A", cx + s * 0.28f, cy + s * 0.32f, s * 0.13f, C.AMBER, font = Fonts.black)
+            }
+            GameId.AJEDREZ -> {
+                val sq = s * 0.2f
+                for (i in 0 until 4) for (j in 0 until 2) {
+                    val x = cx - sq * 2 + i * sq; val y = cy + s * 0.12f + j * sq
+                    G.rr(c, x, y, x + sq, y + sq, 0f, if ((i + j) % 2 == 0) 0xFFEED9B6.toInt() else 0xFFB58863.toInt())
+                }
+                ChessArt.draw(c, Chess.N, true, cx - s * 0.14f, cy - s * 0.06f, s * 0.5f)
+                ChessArt.draw(c, Chess.K, false, cx + s * 0.16f, cy - s * 0.1f, s * 0.5f)
             }
             GameId.CORRE -> {
                 val gy = cy + s * 0.32f
@@ -290,7 +303,7 @@ class SetupScreen(app: MainActivity, val game: GameId) : Screen(app) {
         Store.put("cfg_jug_${game.name}", players.toLong())
         Store.put("cfg_niv_${game.name}_$players", level.toLong())
         if (game == GameId.TRIVIA) Store.put("cfg_grado", grade.toLong())
-        val names = if (players == 2) Store.names() else arrayOf("Tú", if (game == GameId.TRES || game == GameId.CUATRO) "App" else "")
+        val names = if (players == 2) Store.names() else arrayOf("Tú", if (game == GameId.TRES || game == GameId.CUATRO || game == GameId.AJEDREZ) "App" else "")
         stage.push(game.create(app, Match(game, players, level, names, grade = grade)))
     }
 }
@@ -341,6 +354,7 @@ class RecordsScreen(app: MainActivity) : Screen(app) {
                 "Palabras adivinadas: ${Store.long("ahorcado_palabras")}",
                 "Racha actual: ${Store.long("ahorcado_racha_actual")}",
                 "Mejor racha: ${Store.long("ahorcado_racha")}")
+            GameId.AJEDREZ -> (0..2).map { "${lv(g, it)}: ${Store.long("ajedrez_v$it")} ganadas, ${Store.long("ajedrez_d$it")} perdidas" }
             GameId.CORRE -> {
                 fun b(i: Int) = "${lv(g, i)} " + (if (Store.has("corre_m$i")) "${Store.long("corre_m$i")}" else "-")
                 listOf("Metas: ${Store.long("corre_metas")}   ·   Monedas:", (0..2).joinToString(" · ") { b(it) }, (3..5).joinToString(" · ") { b(it) })

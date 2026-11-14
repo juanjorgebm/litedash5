@@ -266,7 +266,7 @@ abstract class GameScreen(app: MainActivity, val m: Match) : Screen(app) {
     private var pending: Result? = null
     private var pendingAt = 0L
     val rnd = Random()
-    val vsApp get() = m.players == 1 && (m.game == GameId.TRES || m.game == GameId.CUATRO)
+    val vsApp get() = m.players == 1 && (m.game == GameId.TRES || m.game == GameId.CUATRO || m.game == GameId.AJEDREZ)
 
     /** Hay un final en curso o ya se mostró. */
     val over get() = pending != null || result != null
