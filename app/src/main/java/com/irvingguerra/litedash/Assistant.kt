@@ -85,13 +85,13 @@ import java.util.Locale
  * así que se graba el audio (WAV de 16 kHz) y Gemini lo entiende directo. La clave se guarda solo en la pantalla.
  */
 object Assistant {
-    class Message(val mine: Boolean, val text: String, val error: Boolean = false, val image: ImageBitmap? = null)
+    class Message(val mine: Boolean, val text: String, val error: Boolean = false, val image: ImageBitmap? = null, val file: String? = null)
 
     private const val RATE = 16_000
     private const val MAX_SECONDS = 45
 
-    /** Tras hablar, este rato de silencio manda la pregunta sola (en trozos de 100 ms). */
-    private const val QUIET_CHUNKS = 18
+    /** Tras hablar, este rato de silencio (3,2 s: deja pensar a media pregunta sin cortar) manda la pregunta sola (en trozos de 100 ms). */
+    private const val QUIET_CHUNKS = 32
     private const val HOST = "https://generativelanguage.googleapis.com/v1beta/models/"
 
     /**
@@ -239,6 +239,82 @@ object Assistant {
     fun clear() {
         quiet()
         messages.clear()
+        chatId = newId()
+    }
+
+    /** Un chat guardado: su archivo, el título (lo primero que se preguntó) y cuándo se usó. */
+    class Chat(val id: String, val title: String, val at: Long)
+
+    @Volatile private var folder: File? = null
+    private var chatId = newId()
+    var chats by mutableStateOf<List<Chat>>(emptyList())
+        private set
+
+    private fun newId() = System.currentTimeMillis().toString()
+
+    private fun dir(): File? = folder?.let { File(it, "asistente").apply { mkdirs() } }
+
+    /** Lee la lista de chats guardados (el más reciente primero). */
+    fun loadChats(context: Context) {
+        folder = context.applicationContext.filesDir
+        val found = dir()?.listFiles { f -> f.name.endsWith(".json") }.orEmpty().mapNotNull { f ->
+            runCatching {
+                val j = JSONObject(f.readText())
+                Chat(f.name.removeSuffix(".json"), j.optString("title"), j.optLong("at", f.lastModified()))
+            }.getOrNull()
+        }
+        chats = found.sortedByDescending { it.at }
+    }
+
+    /** Guarda el chat actual (después de cada respuesta). */
+    private fun saveChat() {
+        val d = dir() ?: return
+        val kept = messages.filter { it.text.isNotBlank() || it.file != null }
+        if (kept.none { it.mine }) return
+        val list = JSONArray()
+        for (m in kept) list.put(JSONObject().put("mine", m.mine).put("text", m.text).put("error", m.error).apply { m.file?.let { put("file", it) } })
+        val title = kept.first { it.mine }.text.replace('\n', ' ').take(80)
+        val now = System.currentTimeMillis()
+        val id = chatId
+        Thread {
+            runCatching { File(d, "$id.json").writeText(JSONObject().put("title", title).put("at", now).put("messages", list).toString()) }
+        }.start()
+        chats = (listOf(Chat(id, title, now)) + chats.filter { it.id != id })
+    }
+
+    /** Abre un chat guardado para seguirlo. */
+    fun openChat(chat: Chat) {
+        val d = dir() ?: return
+        quiet()
+        val j = runCatching { JSONObject(File(d, "${chat.id}.json").readText()) }.getOrNull() ?: return
+        val list = j.optJSONArray("messages") ?: JSONArray()
+        messages.clear()
+        for (i in 0 until list.length()) {
+            val m = list.optJSONObject(i) ?: continue
+            val file = m.optString("file").ifEmpty { null }
+            val picture = file?.let { name -> runCatching { File(d, name).readBytes() }.getOrNull()?.let(::decode) }
+            messages += Message(m.optBoolean("mine"), m.optString("text"), m.optBoolean("error"), picture, file)
+        }
+        chatId = chat.id
+    }
+
+    fun deleteChat(chat: Chat) {
+        val d = dir() ?: return
+        runCatching {
+            val j = JSONObject(File(d, "${chat.id}.json").readText())
+            val list = j.optJSONArray("messages") ?: JSONArray()
+            for (i in 0 until list.length()) list.optJSONObject(i)?.optString("file")?.takeIf { it.isNotEmpty() }?.let { File(d, it).delete() }
+        }
+        File(d, "${chat.id}.json").delete()
+        chats = chats.filter { it.id != chat.id }
+        if (chat.id == chatId) { quiet(); messages.clear(); chatId = newId() }
+    }
+
+    /** Guarda la imagen hecha en la carpeta de los chats; devuelve el nombre del archivo. */
+    private fun keepImage(bytes: ByteArray): String? {
+        val d = dir() ?: return null
+        val name = "img_${System.currentTimeMillis()}.jpg"
+        return runCatching { File(d, name).writeBytes(bytes); name }.getOrNull()
     }
 
     /** Prepara la voz de la pantalla (si tiene un motor de voz con español). */
@@ -388,7 +464,7 @@ object Assistant {
                     chunks++
                     // El ruido de fondo se mide al empezar; hablar es pasar bien por encima de él.
                     if (chunks <= 3) floor = minOf(floor, rms)
-                    val threshold = (floor * 3).coerceIn(600.0, 2500.0)
+                    val threshold = (floor * 2.5).coerceIn(450.0, 2200.0)
                     if (rms > threshold) { spoke = true; silent = 0 } else silent++
                     val shown = (rms / 6000.0).coerceIn(0.0, 1.0).toFloat()
                     main.post { level = shown }
@@ -455,8 +531,9 @@ object Assistant {
                             busy = false
                             if (slot >= messages.size) return@post
                             val made = result.getOrNull()
-                            messages[slot] = if (made != null) Message(false, made.second, image = made.first)
+                            messages[slot] = if (made != null) Message(false, made.second, image = made.first, file = made.third)
                             else Message(false, result.exceptionOrNull()?.message ?: "No se pudo hacer la imagen.", error = true)
+                            saveChat()
                             if (made != null && speakAnswer) speak(clean, "Listo, aquí está la imagen.")
                         }
                     }.start()
@@ -481,6 +558,7 @@ object Assistant {
                         when {
                             final.isNotEmpty() -> {
                                 messages[slot] = Message(false, final)
+                                saveChat()
                                 if (speakAnswer) speak(clean, final)
                             }
                             else -> messages[slot] = Message(false, result.exceptionOrNull()?.message ?: "Gemini contestó vacío; pregunta de nuevo.", error = true)
@@ -551,7 +629,7 @@ object Assistant {
      * Hace la imagen que se pidió: primero con Gemini (si la clave tiene un modelo de imágenes con cupo) y si no, con
      * Pollinations, que es gratis y no pide clave. Devuelve la imagen y un texto corto para la burbuja.
      */
-    private fun image(key: String, request: String): Pair<ImageBitmap, String> {
+    private fun image(key: String, request: String): Triple<ImageBitmap, String, String?> {
         var made: ByteArray? = null
         var caption = ""
         val have = (models ?: known)?.map { it.id }?.filter { "image" in it && "imagen" !in it }.orEmpty()
@@ -571,12 +649,12 @@ object Assistant {
                 }
             }
         }
-        made?.let { bytes -> decode(bytes)?.let { return it to caption.trim().ifEmpty { "Listo, aquí está." } } }
+        made?.let { bytes -> decode(bytes)?.let { return Triple(it, caption.trim().ifEmpty { "Listo, aquí está." }, keepImage(bytes)) } }
         // Sin Gemini: se describe en inglés (así dibuja mejor) y se pide a Pollinations.
         val prompt = runCatching { englishPrompt(key, request) }.getOrNull()?.takeIf { it.isNotBlank() } ?: request
         val bytes = runCatching { pollinations(prompt) }
         val bitmap = bytes.getOrNull()?.let(::decode)
-        if (bitmap != null) return bitmap to "Listo, aquí está."
+        if (bitmap != null) return Triple(bitmap, "Listo, aquí está.", keepImage(bytes.getOrNull()!!))
         val why = gemini.exceptionOrNull()?.message?.lineSequence()?.firstOrNull().orEmpty()
         error("No se pudo hacer la imagen. ${bytes.exceptionOrNull()?.let { "Pollinations: ${it.javaClass.simpleName} ${it.message.orEmpty().take(80)}" }.orEmpty()} ${if (why.isNotEmpty()) "Gemini: $why" else ""}".trim())
     }
@@ -777,6 +855,8 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
     var note by remember { mutableStateOf("") }
     var typed by remember { mutableStateOf("") }
     var picking by remember { mutableStateOf(false) }
+    var browsing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { Assistant.loadChats(context) }
     Assistant.chosen = prefs.assistantModel
     LaunchedEffect(key) { if (key.isNotBlank() && Assistant.models == null) Assistant.loadModels(key) }
     val position = d.trip.position
@@ -811,8 +891,9 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
                         prefs.assistantSpeak = !prefs.assistantSpeak
                         if (!prefs.assistantSpeak) Assistant.quiet()
                     })
-                    if (Assistant.messages.isNotEmpty()) Button(stringResource(R.string.assistant_clear), { Assistant.clear() })
-                    Button(stringResource(R.string.assistant_model), { picking = !picking; if (Assistant.models == null) Assistant.loadModels(prefs.assistantKey.orEmpty()) }, primary = picking)
+                    if (Assistant.messages.isNotEmpty()) Button(stringResource(R.string.assistant_clear), { Assistant.clear(); browsing = false })
+                    Button(stringResource(R.string.assistant_chats), { browsing = !browsing; picking = false }, primary = browsing)
+                    Button(stringResource(R.string.assistant_model), { picking = !picking; browsing = false; if (Assistant.models == null) Assistant.loadModels(prefs.assistantKey.orEmpty()) }, primary = picking)
                     Button(stringResource(R.string.assistant_key), { Assistant.cancel(); draft = prefs.assistantKey.orEmpty(); note = ""; editing = true })
                 }
             }
@@ -834,6 +915,14 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
                 if (prefs.assistantKey.orEmpty().isNotBlank()) Button(stringResource(R.string.assistant_key_cancel), { editing = false; note = "" })
             }
             if (note.isNotEmpty()) Label(note, Typography.body, c.accent, 3, Modifier.padding(top = 12.dp))
+            return@PanelScaffold
+        }
+        if (browsing) {
+            ChatList(
+                open = { Assistant.cancel(); Assistant.openChat(it); browsing = false },
+                remove = { Assistant.deleteChat(it) },
+                fresh = { Assistant.cancel(); Assistant.clear(); browsing = false },
+            )
             return@PanelScaffold
         }
         if (picking) {
@@ -900,6 +989,37 @@ fun AssistantScreen(d: Dependencies, close: () -> Unit) {
 }
 
 /** Elegir el modelo: automático o uno de los que permite la clave (con lo que conviene de cada tipo). */
+/** Los chats guardados: tocar uno lo abre para seguirlo; la X lo borra. */
+@Composable
+private fun ChatList(open: (Assistant.Chat) -> Unit, remove: (Assistant.Chat) -> Unit, fresh: () -> Unit) {
+    val c = LocalColors.current
+    val format = remember { SimpleDateFormat("d MMM, HH:mm", Locale.forLanguageTag("es-CR")) }
+    Column(Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Label(stringResource(R.string.assistant_chats_help), Typography.body, c.textMuted, 2, Modifier.weight(1f))
+            Button(stringResource(R.string.assistant_new_chat), fresh, primary = true)
+        }
+        Spacer(Modifier.height(12.dp))
+        if (Assistant.chats.isEmpty()) Label(stringResource(R.string.assistant_no_chats), Typography.subtitle, c.textMuted, 3)
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(Assistant.chats, key = { it.id }) { chat ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surface).clickable { open(chat) }.padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Label(chat.title.ifBlank { "…" }, Typography.subtitle, c.text, 1)
+                        Label(format.format(Date(chat.at)), Typography.small, c.textMuted, 1)
+                    }
+                    Box(Modifier.size(56.dp).clip(CircleShape).clickable { remove(chat) }, contentAlignment = Alignment.Center) {
+                        Label("✕", Typography.subtitle, c.textMuted, 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ModelPicker(current: String?, pick: (String?) -> Unit) {
     val c = LocalColors.current

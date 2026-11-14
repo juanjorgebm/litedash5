@@ -820,7 +820,11 @@
     <string name="assistant_empty">Pregunta lo que quieras: toca el micrófono y habla, o escribe abajo.</string>
     <string name="assistant_type">Escribe tu pregunta</string>
     <string name="assistant_send">Enviar</string>
-    <string name="assistant_clear">Borrar</string>
+    <string name="assistant_clear">Nuevo</string>
+    <string name="assistant_chats">Chats</string>
+    <string name="assistant_chats_help">Tus conversaciones se guardan solas en la pantalla. Toca una para seguirla.</string>
+    <string name="assistant_new_chat">Nuevo chat</string>
+    <string name="assistant_no_chats">Todavía no hay chats guardados.</string>
     <string name="assistant_key">Clave</string>
     <string name="assistant_voice_on">Voz: sí</string>
     <string name="assistant_voice_off">Voz: no</string>

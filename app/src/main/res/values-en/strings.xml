@@ -799,7 +799,11 @@
     <string name="assistant_empty">Ask anything: tap the microphone and speak, or type below.</string>
     <string name="assistant_type">Type your question</string>
     <string name="assistant_send">Send</string>
-    <string name="assistant_clear">Clear</string>
+    <string name="assistant_clear">New</string>
+    <string name="assistant_chats">Chats</string>
+    <string name="assistant_chats_help">Your conversations are saved on this screen automatically. Tap one to continue it.</string>
+    <string name="assistant_new_chat">New chat</string>
+    <string name="assistant_no_chats">No saved chats yet.</string>
     <string name="assistant_key">Key</string>
     <string name="assistant_voice_on">Voice: on</string>
     <string name="assistant_voice_off">Voice: off</string>
