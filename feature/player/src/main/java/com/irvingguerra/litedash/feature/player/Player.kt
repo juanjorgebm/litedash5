@@ -303,7 +303,29 @@ object Player {
 
     internal val sessionToken get() = session?.sessionToken
 
+    /** La carátula que se publicó para lo que suena (para no perderla al cambiar solo los datos). */
+    private var shownArt: Bitmap? = null
+
+    /**
+     * Cambia los datos de una canción de la cola (los reales, buscados en internet por la app) sin cortarla: título,
+     * artista, álbum y, si la hay, la carátula. Llamar en el hilo principal.
+     */
+    fun retag(key: String, title: String, artist: String, album: String, art: Bitmap?) {
+        val s = state
+        var changed = false
+        val queue = s.queue.map {
+            if (it is Track && it.key == key && (it.title != title || it.artist != artist || it.album != album)) {
+                changed = true
+                it.copy(title = title, artist = artist, album = album)
+            } else it
+        }
+        if (changed) state = PlayerState(s.source, queue, s.index, s.playing, s.buffering, s.error)
+        val now = state.current ?: return
+        if (now.key == key && (changed || art != null)) publishMetadata(now, art ?: shownArt)
+    }
+
     private fun publishMetadata(item: Playable, art: Bitmap?) {
+        shownArt = art
         val duration = (item as? Track)?.durationMs ?: -1L
         session?.setMetadata(
             MediaMetadata.Builder()

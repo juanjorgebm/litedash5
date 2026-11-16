@@ -358,6 +358,8 @@ fun mapApp(d: Dependencies, apps: List<App>): App? =
 fun Home(d: Dependencies, revision: Int, homePressed: Int) {
     val c = LocalColors.current
     val context = LocalContext.current
+    // Los datos reales de la canción de la USB (y sus etiquetas en el MP3).
+    UsbTagsWatcher()
     val apps = rememberApps(d.apps).orEmpty()
     val currentApps by rememberUpdatedState(apps)
     val car = d.cars.pkg(d.prefs.carModel)

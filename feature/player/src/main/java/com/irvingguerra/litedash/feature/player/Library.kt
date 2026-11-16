@@ -42,6 +42,16 @@ object Library {
     val permission: String
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
 
+    /** Los datos corregidos por la app (buscados en internet) para cada canción; null = como vienen del archivo. */
+    @Volatile
+    var overrides: ((Track) -> Track)? = null
+
+    /** Cambia en la lista ya leída los datos de una canción (la app los corrigió). */
+    fun retag(key: String, title: String, artist: String, album: String) {
+        val c = cache ?: return
+        cache = c.first to (c.second.first to c.second.second.map { if (it.key == key) it.copy(title = title, artist = artist, album = album) else it })
+    }
+
     fun hasPermission(context: Context) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     /** El permiso del aviso del reproductor, que solo existe desde Android 13. */
@@ -100,7 +110,8 @@ object Library {
     private fun tracks(context: Context, drive: Drive): List<Track> {
         val found = if (drive.id.startsWith(FOLDER)) folderTracks(context, drive.id.removePrefix(FOLDER).toUri())
         else indexed(context, drive).ifEmpty { drive.path?.let { scan(File(it)) }.orEmpty() }
-        return found.sortedWith(compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.folder }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.file })
+        val fix = overrides
+        return found.map { t -> fix?.let { f -> runCatching { f(t) }.getOrNull() } ?: t }.sortedWith(compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.folder }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.file })
     }
 
     /** Las canciones de la carpeta elegida, por el sistema de documentos. */

@@ -105,7 +105,7 @@ object Lyrics {
                 lines = found
                 status = when {
                     found.isNotEmpty() -> ""
-                    result.isFailure -> app.getString(R.string.lyrics_offline)
+                    result.isFailure -> app.getString(R.string.lyrics_offline) + "\n" + (result.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName } ?: "")
                     else -> app.getString(R.string.lyrics_none)
                 }
             }
@@ -120,19 +120,30 @@ object Lyrics {
             if (lrc.isFile) parse(lrc.readText()).takeIf { it.isNotEmpty() }?.let { return it }
         }
         // 2) La que ya se bajó antes.
-        val (artist, title) = names(song, if (sameSong) track else null)
-        val cache = File(File(context.filesDir, "letras").apply { mkdirs() }, md5("$artist|$title".lowercase()) + ".lrc")
-        if (cache.isFile) return parse(cache.readText())
-        // 3) LRCLIB.
-        val text = lrclib(context, artist, title, track?.album.takeIf { sameSong }, song.durationMs) ?: return emptyList()
+        val (rawArtist, rawTitle) = names(song, if (sameSong) track else null)
+        val dir = File(context.filesDir, "letras").apply { mkdirs() }
+        File(dir, md5("$rawArtist|$rawTitle".lowercase()) + ".lrc").takeIf { it.isFile }?.let { return parse(it.readText()) }
+        // Con los datos reales de iTunes (el archivo suele traer "Aquí_Abajo(256k)" y sin artista: así LRCLIB no la halla).
+        val real = runCatching { SongInfo.lookup(context, rawArtist, rawTitle, song.durationMs) }.getOrNull()
+        val artist = real?.optString("artist")?.takeIf { it.isNotBlank() } ?: rawArtist
+        val title = real?.optString("title")?.takeIf { it.isNotBlank() } ?: rawTitle
+        val album = real?.optString("album")?.takeIf { it.isNotBlank() } ?: track?.album.takeIf { sameSong }
+        val cache = File(dir, md5("$rawArtist|$rawTitle".lowercase()) + ".lrc")
+        // 3) LRCLIB; si falla o no la tiene, lyrics.ovh (solo el texto, sin tiempos).
+        var error: Throwable? = null
+        val text = runCatching { lrclib(context, artist, title, album, song.durationMs) }.onFailure { error = it }.getOrNull()
+            ?: runCatching { lyricsOvh(context, artist, title) }.onFailure { if (error == null) error = it }.getOrNull()
+            ?: error?.let { throw it } ?: return emptyList()
         runCatching { cache.writeText(text) }
         return parse(text)
     }
 
     /** Artista y título limpios; si el archivo no trae datos, se sacan del nombre ("Artista - Canción.mp3"). */
-    fun names(song: Song, track: Track?): Pair<String, String> {
-        var artist = song.artist.trim()
-        var title = song.title.trim()
+    fun names(song: Song, track: Track?): Pair<String, String> = names(song.title, song.artist, track)
+
+    fun names(songTitle: String, songArtist: String, track: Track?): Pair<String, String> {
+        var artist = songArtist.trim()
+        var title = songTitle.trim()
         val file = track?.file?.substringBeforeLast('.')
         val unknown = artist.isBlank() || artist.equals("<unknown>", true) || artist.contains("desconocido", true)
         if (unknown && title.contains(" - ")) {
@@ -140,7 +151,9 @@ object Lyrics {
         } else if (unknown && file != null && file.contains(" - ")) {
             artist = file.substringBefore(" - ").trim(); title = file.substringAfter(" - ").trim()
         }
-        // Sin números de pista ni "(Official Video)" y parecidos.
+        // Sin guiones bajos, sin "(256k)" ni "[320 kbps]", sin números de pista ni "(Official Video)" y parecidos.
+        artist = artist.replace('_', ' ').replace(Regex("\\s+"), " ").trim()
+        title = title.replace('_', ' ').replace(Regex("""\s*[(\[]\s*\d{2,3}\s*k(bps)?\s*[)\]]""", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim()
         title = title.replace(Regex("""^\d{1,3}[\s.\-_]+"""), "").replace(Regex("""\s*[(\[](official|video|audio|lyric|letra|hd|hq|remaster)[^)\]]*[)\]]""", RegexOption.IGNORE_CASE), "").trim()
         return artist to title
     }
@@ -179,6 +192,14 @@ object Lyrics {
         return o.optString("syncedLyrics").takeIf { it.isNotBlank() && it != "null" } ?: o.optString("plainLyrics").takeIf { it.isNotBlank() && it != "null" }
     }
 
+    /** Respaldo: lyrics.ovh (otro servicio libre, con otro certificado). */
+    private fun lyricsOvh(context: Context, artist: String, title: String): String? {
+        if (artist.isBlank() || title.isBlank()) return null
+        fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+        val raw = get(context, "https://api.lyrics.ovh/v1/${enc(artist)}/${enc(title)}") ?: return null
+        return JSONObject(raw).optString("lyrics").replace("\r\n", "\n").trim().takeIf { it.isNotBlank() }
+    }
+
     /** Con [Https.open]: en Android 5 a 7.1 suma las raíces nuevas que la pantalla no trae (si no, el https truena). */
     private fun get(context: Context, url: String): String? {
         val connection = Https.open(context, url)
@@ -187,7 +208,8 @@ object Lyrics {
             connection.readTimeout = 15_000
             connection.setRequestProperty("User-Agent", "LiteDash car launcher")
             val code = connection.responseCode
-            if (code == 404) return null
+            // 400 = faltó algo en la búsqueda (artista vacío), 404 = no la tienen: no es falta de internet.
+            if (code == 404 || code == 400) return null
             check(code in 200..299) { "código $code" }
             return connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
         } finally {
@@ -273,54 +295,70 @@ object SongInfo {
 
     private fun find(context: Context, song: Song, track: Track?): Info? {
         val (artist, title) = Lyrics.names(song, track)
+        val o = lookup(context, artist, title, song.durationMs) ?: return null
+        val pic = picture(context, o)
+        val art = if (pic?.isFile == true) runCatching { android.graphics.BitmapFactory.decodeFile(pic.path)?.let { it.asImageBitmap() } }.getOrNull() else null
+        return Info(o.optString("title").ifBlank { title }, o.optString("artist").ifBlank { artist }, o.optString("album"), o.optString("year"), o.optString("genre"), art)
+    }
+
+    private fun idOf(artist: String, title: String) = MessageDigest.getInstance("MD5").digest("$artist|$title".lowercase().toByteArray()).joinToString("") { "%02x".format(it) }
+
+    /**
+     * Los datos reales en iTunes (title, artist, album, year, genre, art, ms), guardados en la pantalla; null si no
+     * está. Lee la red: fuera del hilo principal.
+     */
+    fun lookup(context: Context, artist: String, title: String, durationMs: Long): JSONObject? {
         val dir = File(context.filesDir, "canciones").apply { mkdirs() }
-        val id = MessageDigest.getInstance("MD5").digest("$artist|$title".lowercase().toByteArray()).joinToString("") { "%02x".format(it) }
-        val json = File(dir, "$id.json")
-        val pic = File(dir, "$id.jpg")
-        val o = if (json.isFile) JSONObject(json.readText()) else {
-            val term = URLEncoder.encode("$artist $title".trim(), "UTF-8")
-            val connection = Https.open(context, "https://itunes.apple.com/search?media=music&entity=song&limit=5&term=$term")
-            val results = try {
+        val json = File(dir, idOf(artist, title) + ".json")
+        if (json.isFile) return runCatching { JSONObject(json.readText()) }.getOrNull()
+        val term = URLEncoder.encode("$artist $title".trim(), "UTF-8")
+        val connection = Https.open(context, "https://itunes.apple.com/search?media=music&entity=song&limit=5&term=$term")
+        val results = try {
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 15_000
+            connection.setRequestProperty("User-Agent", "LiteDash car launcher")
+            JSONObject(connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }).optJSONArray("results") ?: JSONArray()
+        } finally {
+            connection.disconnect()
+        }
+        // La que dura parecido, si se sabe la duración.
+        var best: JSONObject? = null
+        var bestDiff = Long.MAX_VALUE
+        for (i in 0 until results.length()) {
+            val r = results.optJSONObject(i) ?: continue
+            val diff = if (durationMs > 0) Math.abs(r.optLong("trackTimeMillis") - durationMs) else i.toLong()
+            if (diff < bestDiff) { bestDiff = diff; best = r }
+        }
+        val r = best ?: return null
+        val out = JSONObject()
+            .put("title", r.optString("trackName"))
+            .put("artist", r.optString("artistName"))
+            .put("album", r.optString("collectionName"))
+            .put("year", r.optString("releaseDate").take(4))
+            .put("genre", r.optString("primaryGenreName"))
+            .put("art", r.optString("artworkUrl100").replace("100x100", "600x600"))
+            .put("ms", r.optLong("trackTimeMillis"))
+            .put("track", r.optInt("trackNumber"))
+        runCatching { json.writeText(out.toString()) }
+        return out
+    }
+
+    /** La carátula de [o] bajada a la pantalla (la primera vez la baja); null si no hay. */
+    fun picture(context: Context, o: JSONObject): File? {
+        val url = o.optString("art").takeIf { it.startsWith("http") } ?: return null
+        val pic = File(File(context.filesDir, "canciones").apply { mkdirs() }, idOf(url, "art") + ".jpg")
+        if (!pic.isFile) runCatching {
+            val connection = Https.open(context, url)
+            try {
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 15_000
-                connection.setRequestProperty("User-Agent", "LiteDash car launcher")
-                JSONObject(connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }).optJSONArray("results") ?: JSONArray()
+                val bytes = connection.inputStream.use { it.readBytes() }
+                File(pic.path + ".part").apply { writeBytes(bytes) }.renameTo(pic)
             } finally {
                 connection.disconnect()
             }
-            // La que dura parecido, si se sabe la duración.
-            var best: JSONObject? = null
-            var bestDiff = Long.MAX_VALUE
-            for (i in 0 until results.length()) {
-                val r = results.optJSONObject(i) ?: continue
-                val diff = if (song.durationMs > 0) Math.abs(r.optLong("trackTimeMillis") - song.durationMs) else i.toLong()
-                if (diff < bestDiff) { bestDiff = diff; best = r }
-            }
-            val r = best ?: return null
-            val out = JSONObject()
-                .put("title", r.optString("trackName"))
-                .put("artist", r.optString("artistName"))
-                .put("album", r.optString("collectionName"))
-                .put("year", r.optString("releaseDate").take(4))
-                .put("genre", r.optString("primaryGenreName"))
-                .put("art", r.optString("artworkUrl100").replace("100x100", "600x600"))
-            runCatching { json.writeText(out.toString()) }
-            out
         }
-        if (!pic.isFile) o.optString("art").takeIf { it.startsWith("http") }?.let { url ->
-            runCatching {
-                val connection = Https.open(context, url)
-                try {
-                    connection.connectTimeout = 10_000
-                    connection.readTimeout = 15_000
-                    pic.writeBytes(connection.inputStream.use { it.readBytes() })
-                } finally {
-                    connection.disconnect()
-                }
-            }
-        }
-        val art = if (pic.isFile) runCatching { android.graphics.BitmapFactory.decodeFile(pic.path)?.let { it.asImageBitmap() } }.getOrNull() else null
-        return Info(o.optString("title").ifBlank { title }, o.optString("artist").ifBlank { artist }, o.optString("album"), o.optString("year"), o.optString("genre"), art)
+        return pic.takeIf { it.isFile }
     }
 }
 
@@ -358,6 +396,7 @@ fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifi
         SongInfo.load(context, song)
     }
     val pos by rememberFinePosition(song)
+    var searching by remember { mutableStateOf(false) }
     val info = if (song != null && SongInfo.forSong == SongInfo.keyOf(song)) SongInfo.info else null
     val title = info?.title ?: song?.title ?: stringResource(R.string.lyrics_title)
     val artist = info?.artist ?: song?.artist?.takeIf { it.isNotBlank() } ?: ""
@@ -393,8 +432,15 @@ fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifi
                 }
             }
             Box(Modifier.weight(0.58f).fillMaxSize()) {
-                LyricsLines(music, song, pos, full = true, Modifier.fillMaxSize())
-                IconButton(Icons.close, onFull, Modifier.align(Alignment.TopEnd), size = 64.dp)
+                if (searching) UsbSearch(close = { searching = false })
+                else {
+                    LyricsLines(music, song, pos, full = true, Modifier.fillMaxSize())
+                    Column(Modifier.align(Alignment.TopEnd), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        IconButton(Icons.close, onFull, size = 64.dp)
+                        // Buscar en la USB (por canción, cantante, estilo o carpeta).
+                        IconButton(Icons.search, { searching = true }, size = 64.dp)
+                    }
+                }
             }
         } else Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -464,7 +510,9 @@ private fun stringResource(id: Int) = androidx.compose.ui.res.stringResource(id)
 fun LyricsScreen(music: MusicRepository, close: () -> Unit) {
     val c = LocalColors.current
     // Fondo opaco: si no, se ve la barra de la izquierda a través.
-    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF101318)).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {}.padding(16.dp)) {
+    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF101318)).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {}
+        // Abajo más espacio: la barra del carro tapa la parte de abajo de la pantalla.
+        .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 76.dp)) {
         LyricsCard(music, full = true, onFull = close)
     }
 }

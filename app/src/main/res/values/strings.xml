@@ -862,7 +862,19 @@
     <string name="lyrics_title">Letra</string>
     <string name="lyrics_searching">Buscando la letra…</string>
     <string name="lyrics_none">No encontré la letra de esta canción.</string>
-    <string name="lyrics_offline">No se pudo buscar la letra (¿sin internet?).</string>
+    <string name="lyrics_offline">No se pudo buscar la letra.</string>
+    <string name="usb_search_songs">Canciones</string>
+    <string name="usb_search_artists">Cantantes</string>
+    <string name="usb_search_genres">Estilos</string>
+    <string name="usb_search_folders">Carpetas</string>
+    <string name="usb_search_hint">Buscar canción, cantante, álbum o carpeta</string>
+    <string name="usb_search_loading">Leyendo la USB…</string>
+    <string name="usb_search_empty">No hay música en la USB (o falta el permiso: ábrela una vez desde Música, botón de lista).</string>
+    <string name="usb_search_none">Nada coincide con la búsqueda.</string>
+    <string name="usb_search_no_genre">Sin estilo</string>
+    <string name="usb_search_no_artist">Sin cantante</string>
+    <string name="usb_search_root">Raíz de la USB</string>
+    <string name="usb_search_count">%1$d canciones</string>
     <string name="lyrics_nothing">Pon una canción y aquí sale su letra.</string>
     <string name="lyrics_car_app">La app de música del carro no le dice a LiteDash qué canción suena, así que no se puede buscar la letra. Para verla, toca la canción con el reproductor de LiteDash: en Música, botón de lista, elige la USB y la canción.</string>
 </resources>

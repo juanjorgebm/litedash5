@@ -841,7 +841,19 @@
     <string name="lyrics_title">Lyrics</string>
     <string name="lyrics_searching">Looking for the lyrics…</string>
     <string name="lyrics_none">No lyrics found for this song.</string>
-    <string name="lyrics_offline">Could not look up the lyrics (no internet?).</string>
+    <string name="lyrics_offline">Could not look up the lyrics.</string>
+    <string name="usb_search_songs">Songs</string>
+    <string name="usb_search_artists">Artists</string>
+    <string name="usb_search_genres">Genres</string>
+    <string name="usb_search_folders">Folders</string>
+    <string name="usb_search_hint">Search song, artist, album or folder</string>
+    <string name="usb_search_loading">Reading the USB…</string>
+    <string name="usb_search_empty">No music on the USB (or permission missing: open it once from Music, list button).</string>
+    <string name="usb_search_none">Nothing matches the search.</string>
+    <string name="usb_search_no_genre">No genre</string>
+    <string name="usb_search_no_artist">No artist</string>
+    <string name="usb_search_root">USB root</string>
+    <string name="usb_search_count">%1$d songs</string>
     <string name="lyrics_nothing">Play a song and its lyrics show up here.</string>
     <string name="lyrics_car_app">The car\'s music app does not tell LiteDash which song is playing, so the lyrics cannot be found. To see them, play the song with the LiteDash player: in Music, tap the list button, pick the USB and the song.</string>
 </resources>
