@@ -864,4 +864,5 @@
     <string name="lyrics_none">No encontré la letra de esta canción.</string>
     <string name="lyrics_offline">No se pudo buscar la letra (¿sin internet?).</string>
     <string name="lyrics_nothing">Pon una canción y aquí sale su letra.</string>
+    <string name="lyrics_car_app">La app de música del carro no le dice a LiteDash qué canción suena, así que no se puede buscar la letra. Para verla, toca la canción con el reproductor de LiteDash: en Música, botón de lista, elige la USB y la canción.</string>
 </resources>

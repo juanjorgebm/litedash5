@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -260,7 +261,8 @@ fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifi
                 val middle = with(LocalDensity.current) { (maxHeight / 3).roundToPx() }
                 LaunchedEffect(current, lines.size) { if (current >= 0) list.animateScrollToItem(current, -middle) }
                 when {
-                    song == null -> Label(stringResource(R.string.lyrics_nothing), Typography.subtitle, c.textMuted, 3, Modifier.align(Alignment.Center))
+                    // La app de música del carro no dice qué suena: la letra solo se puede con el reproductor de LiteDash.
+                    song == null -> Label(stringResource(if (music.carMode) R.string.lyrics_car_app else R.string.lyrics_nothing), Typography.subtitle.copy(textAlign = TextAlign.Center), c.textMuted, 5, Modifier.align(Alignment.Center).padding(horizontal = 24.dp))
                     lines.isEmpty() -> Label(Lyrics.status.ifEmpty { stringResource(R.string.lyrics_none) }, Typography.subtitle, c.textMuted, 3, Modifier.align(Alignment.Center))
                     else -> LazyColumn(Modifier.fillMaxSize(), state = list, verticalArrangement = Arrangement.spacedBy(if (full) 14.dp else 8.dp)) {
                         item { Spacer(Modifier.height(if (timed) 40.dp else 0.dp)) }
@@ -321,7 +323,8 @@ private fun stringResource(id: Int) = androidx.compose.ui.res.stringResource(id)
 @Composable
 fun LyricsScreen(music: MusicRepository, close: () -> Unit) {
     val c = LocalColors.current
-    Box(Modifier.fillMaxSize().background(c.background).padding(16.dp)) {
+    // Fondo opaco: si no, se ve la barra de la izquierda a través.
+    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF101318)).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {}.padding(16.dp)) {
         LyricsCard(music, full = true, onFull = close)
     }
 }

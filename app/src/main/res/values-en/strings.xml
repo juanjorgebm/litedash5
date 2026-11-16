@@ -843,4 +843,5 @@
     <string name="lyrics_none">No lyrics found for this song.</string>
     <string name="lyrics_offline">Could not look up the lyrics (no internet?).</string>
     <string name="lyrics_nothing">Play a song and its lyrics show up here.</string>
+    <string name="lyrics_car_app">The car\'s music app does not tell LiteDash which song is playing, so the lyrics cannot be found. To see them, play the song with the LiteDash player: in Music, tap the list button, pick the USB and the song.</string>
 </resources>
