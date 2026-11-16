@@ -129,7 +129,7 @@ object Lyrics {
     }
 
     /** Artista y título limpios; si el archivo no trae datos, se sacan del nombre ("Artista - Canción.mp3"). */
-    private fun names(song: Song, track: Track?): Pair<String, String> {
+    fun names(song: Song, track: Track?): Pair<String, String> {
         var artist = song.artist.trim()
         var title = song.title.trim()
         val file = track?.file?.substringBeforeLast('.')
@@ -236,86 +236,215 @@ private fun rememberFinePosition(song: Song?) = produceState(song?.currentPositi
 }
 
 /**
- * La letra en una tarjeta, con la línea que se canta resaltada y centrada. [full] = a pantalla completa (letra más
- * grande y los controles de la música abajo). Tocar una línea salta a esa parte.
+ * Lo que se sabe de la canción, como en Spotify: carátula grande, álbum, año y género. Sale de la búsqueda de iTunes
+ * (libre, sin clave) con el artista y el título; se guarda en la pantalla para no volver a pedirlo.
+ */
+object SongInfo {
+    class Info(val title: String, val artist: String, val album: String, val year: String, val genre: String, val art: androidx.compose.ui.graphics.ImageBitmap?)
+
+    var info by mutableStateOf<Info?>(null)
+        private set
+    var forSong by mutableStateOf<String?>(null)
+        private set
+    private var loading: String? = null
+    private val main = Handler(Looper.getMainLooper())
+
+    fun keyOf(song: Song) = "${song.artist.trim()}|${song.title.trim()}".lowercase()
+
+    fun load(context: Context, song: Song?) {
+        if (song == null || song.title.isBlank()) return
+        val key = keyOf(song)
+        if (key == forSong || key == loading) return
+        loading = key
+        info = null
+        val app = context.applicationContext
+        val track = (Player.state.current as? Track)?.takeIf { it.title.equals(song.title, ignoreCase = true) }
+        Thread {
+            val found = runCatching { find(app, song, track) }.getOrNull()
+            main.post {
+                if (loading != key) return@post
+                loading = null
+                forSong = key
+                info = found
+            }
+        }.start()
+    }
+
+    private fun find(context: Context, song: Song, track: Track?): Info? {
+        val (artist, title) = Lyrics.names(song, track)
+        val dir = File(context.filesDir, "canciones").apply { mkdirs() }
+        val id = MessageDigest.getInstance("MD5").digest("$artist|$title".lowercase().toByteArray()).joinToString("") { "%02x".format(it) }
+        val json = File(dir, "$id.json")
+        val pic = File(dir, "$id.jpg")
+        val o = if (json.isFile) JSONObject(json.readText()) else {
+            val term = URLEncoder.encode("$artist $title".trim(), "UTF-8")
+            val connection = Https.open(context, "https://itunes.apple.com/search?media=music&entity=song&limit=5&term=$term")
+            val results = try {
+                connection.connectTimeout = 10_000
+                connection.readTimeout = 15_000
+                connection.setRequestProperty("User-Agent", "LiteDash car launcher")
+                JSONObject(connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }).optJSONArray("results") ?: JSONArray()
+            } finally {
+                connection.disconnect()
+            }
+            // La que dura parecido, si se sabe la duración.
+            var best: JSONObject? = null
+            var bestDiff = Long.MAX_VALUE
+            for (i in 0 until results.length()) {
+                val r = results.optJSONObject(i) ?: continue
+                val diff = if (song.durationMs > 0) Math.abs(r.optLong("trackTimeMillis") - song.durationMs) else i.toLong()
+                if (diff < bestDiff) { bestDiff = diff; best = r }
+            }
+            val r = best ?: return null
+            val out = JSONObject()
+                .put("title", r.optString("trackName"))
+                .put("artist", r.optString("artistName"))
+                .put("album", r.optString("collectionName"))
+                .put("year", r.optString("releaseDate").take(4))
+                .put("genre", r.optString("primaryGenreName"))
+                .put("art", r.optString("artworkUrl100").replace("100x100", "600x600"))
+            runCatching { json.writeText(out.toString()) }
+            out
+        }
+        if (!pic.isFile) o.optString("art").takeIf { it.startsWith("http") }?.let { url ->
+            runCatching {
+                val connection = Https.open(context, url)
+                try {
+                    connection.connectTimeout = 10_000
+                    connection.readTimeout = 15_000
+                    pic.writeBytes(connection.inputStream.use { it.readBytes() })
+                } finally {
+                    connection.disconnect()
+                }
+            }
+        }
+        val art = if (pic.isFile) runCatching { android.graphics.BitmapFactory.decodeFile(pic.path)?.let { androidx.compose.ui.graphics.asImageBitmap(it) } }.getOrNull() else null
+        return Info(o.optString("title").ifBlank { title }, o.optString("artist").ifBlank { artist }, o.optString("album"), o.optString("year"), o.optString("genre"), art)
+    }
+}
+
+/** La carátula: la de iTunes si la hay; si no, la que trae la canción; si no, una nota. */
+@Composable
+private fun Cover(song: Song?, info: SongInfo.Info?, size: androidx.compose.ui.unit.Dp) {
+    val c = LocalColors.current
+    val art = info?.art ?: song?.artwork?.let { androidx.compose.ui.graphics.asImageBitmap(it) }
+    Box(Modifier.width(size).height(size).clip(RoundedCornerShape(if (size > 100.dp) 16.dp else 10.dp)).background(c.surfaceHigh), contentAlignment = Alignment.Center) {
+        if (art != null) androidx.compose.foundation.Image(art, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+        else com.irvingguerra.litedash.core.ui.Icon(Icons.music, c.textMuted, size * 0.4f)
+    }
+}
+
+/** "Álbum · 1987 · Pop". */
+private fun details(info: SongInfo.Info?) = listOfNotNull(info?.album?.takeIf { it.isNotBlank() }, info?.year?.takeIf { it.isNotBlank() }, info?.genre?.takeIf { it.isNotBlank() }).joinToString(" · ")
+
+/**
+ * La letra en una tarjeta, con la línea que se canta resaltada y centrada, y arriba la carátula, el álbum, el año y
+ * el género. [full] = a pantalla completa, como en Spotify: carátula grande con los datos y los controles a la
+ * izquierda y la letra grande a la derecha. Tocar una línea salta a esa parte.
  */
 @Composable
 fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifier: Modifier = Modifier) {
     val c = LocalColors.current
     val context = LocalContext.current
-    // Cuenta como usuaria de la música mientras se ve: en pantalla completa la música en grande ya no está debajo y,
-    // sin esto, LiteDash dejaba de escuchar qué suena (sin canción, sin letra y los botones sin efecto).
+    // Escuchar lo que suena mientras esta vista esté (a pantalla completa, la de música de atrás ya se cerró).
     DisposableEffect(music) {
         music.use()
         onDispose { music.release() }
     }
     val song = music.song
-    LaunchedEffect(song?.title, song?.artist) { Lyrics.load(context, song) }
+    LaunchedEffect(song?.title, song?.artist) {
+        Lyrics.load(context, song)
+        SongInfo.load(context, song)
+    }
     val pos by rememberFinePosition(song)
+    val info = if (song != null && SongInfo.forSong == SongInfo.keyOf(song)) SongInfo.info else null
+    val title = info?.title ?: song?.title ?: stringResource(R.string.lyrics_title)
+    val artist = info?.artist ?: song?.artist?.takeIf { it.isNotBlank() } ?: ""
+    Card(modifier.fillMaxSize()) {
+        if (full) Row(Modifier.fillMaxSize().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+            BoxWithConstraints(Modifier.weight(0.42f).fillMaxSize()) {
+                val cover = minOf(maxWidth, maxHeight - 250.dp).coerceAtLeast(120.dp)
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Cover(song, info, cover)
+                    Spacer(Modifier.height(14.dp))
+                    Label(title, Typography.title, c.text, 2, Modifier.fillMaxWidth())
+                    if (artist.isNotBlank()) Label(artist, Typography.subtitle, c.accent, 1, Modifier.fillMaxWidth())
+                    details(info).takeIf { it.isNotEmpty() }?.let { Label(it, Typography.body, c.textMuted, 2, Modifier.fillMaxWidth()) }
+                    Spacer(Modifier.weight(1f))
+                    if (song != null && song.durationMs > 0) {
+                        val fraction = (pos.toFloat() / song.durationMs).coerceIn(0f, 1f)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Label(clock(pos), Typography.small, c.textMuted, 1)
+                            Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(c.line)) {
+                                Box(Modifier.fillMaxWidth(fraction).height(6.dp).background(c.primary))
+                            }
+                            Label(clock(song.durationMs), Typography.small, c.textMuted, 1)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(Icons.previous, { music.previous() }, size = 80.dp)
+                        Spacer(Modifier.width(24.dp))
+                        IconButton(if (song?.playing == true) Icons.pause else Icons.play, { music.toggle() }, size = 96.dp, background = c.primary, color = c.onPrimary)
+                        Spacer(Modifier.width(24.dp))
+                        IconButton(Icons.next, { music.next() }, size = 80.dp)
+                    }
+                }
+            }
+            Box(Modifier.weight(0.58f).fillMaxSize()) {
+                LyricsLines(music, song, pos, full = true, Modifier.fillMaxSize())
+                IconButton(Icons.close, onFull, Modifier.align(Alignment.TopEnd), size = 64.dp)
+            }
+        } else Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (song != null) Cover(song, info, 64.dp)
+                Column(Modifier.weight(1f)) {
+                    Label(title, Typography.subtitle, c.text, 1)
+                    Label(listOf(artist, details(info)).filter { it.isNotBlank() }.joinToString(" · ").ifEmpty { stringResource(R.string.lyrics_title) }, Typography.small, c.textMuted, 1)
+                }
+                IconButton(Icons.expand, onFull, size = 52.dp)
+            }
+            Spacer(Modifier.height(8.dp))
+            LyricsLines(music, song, pos, full = false, Modifier.weight(1f).fillMaxWidth())
+        }
+    }
+}
+
+/** Las líneas de la letra, con la que se canta resaltada y centrada. */
+@Composable
+private fun LyricsLines(music: MusicRepository, song: Song?, pos: Long, full: Boolean, modifier: Modifier) {
+    val c = LocalColors.current
     val lines = if (song != null && Lyrics.forSong == "${song.artist.trim()}|${song.title.trim()}".lowercase()) Lyrics.lines else emptyList()
     val timed = lines.any { it.ms != null }
     // Medio segundo antes: así la línea aparece cuando empieza a cantarse, no tarde.
     val current = if (timed) lines.indexOfLast { (it.ms ?: Long.MAX_VALUE) <= pos + 500 } else -1
     val list = rememberLazyListState()
-    Card(modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Label(song?.title ?: stringResource(R.string.lyrics_title), if (full) Typography.title else Typography.subtitle, c.text, 1)
-                    Label(song?.artist?.takeIf { it.isNotBlank() } ?: stringResource(R.string.lyrics_title), Typography.small, c.textMuted, 1)
+    BoxWithConstraints(modifier) {
+        val middle = with(LocalDensity.current) { (maxHeight / 3).roundToPx() }
+        LaunchedEffect(current, lines.size) { if (current >= 0) list.animateScrollToItem(current, -middle) }
+        when {
+            // La app de música del carro no dice qué suena: la letra solo se puede con el reproductor de LiteDash.
+            song == null -> Label(stringResource(if (music.carMode) R.string.lyrics_car_app else R.string.lyrics_nothing), Typography.subtitle.copy(textAlign = TextAlign.Center), c.textMuted, 5, Modifier.align(Alignment.Center).padding(horizontal = 24.dp))
+            lines.isEmpty() -> Label(Lyrics.status.ifEmpty { stringResource(R.string.lyrics_none) }, Typography.subtitle, c.textMuted, 3, Modifier.align(Alignment.Center))
+            else -> LazyColumn(Modifier.fillMaxSize(), state = list, verticalArrangement = Arrangement.spacedBy(if (full) 14.dp else 8.dp)) {
+                item { Spacer(Modifier.height(if (timed) 40.dp else 0.dp)) }
+                itemsIndexed(lines) { i, line ->
+                    val now = i == current
+                    val past = timed && i < current
+                    val style = if (full) Typography.title.copy(fontSize = if (now) 36.sp else 28.sp) else Typography.subtitle.copy(fontSize = if (now) 26.sp else 20.sp)
+                    Label(
+                        line.text.ifBlank { "♪" },
+                        style.copy(fontWeight = if (now) FontWeight.Bold else FontWeight.Medium, textAlign = TextAlign.Center),
+                        when {
+                            now -> c.accent
+                            past -> c.textMuted.copy(alpha = 0.55f)
+                            else -> c.textMuted
+                        },
+                        3,
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = line.ms != null && song.seekable) { line.ms?.let { music.seekTo(it) } }.padding(vertical = 2.dp),
+                    )
                 }
-                IconButton(if (full) Icons.close else Icons.expand, onFull, size = if (full) 64.dp else 52.dp)
-            }
-            Spacer(Modifier.height(8.dp))
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                val middle = with(LocalDensity.current) { (maxHeight / 3).roundToPx() }
-                LaunchedEffect(current, lines.size) { if (current >= 0) list.animateScrollToItem(current, -middle) }
-                when {
-                    // La app de música del carro no dice qué suena: la letra solo se puede con el reproductor de LiteDash.
-                    song == null -> Label(stringResource(if (music.carMode) R.string.lyrics_car_app else R.string.lyrics_nothing), Typography.subtitle.copy(textAlign = TextAlign.Center), c.textMuted, 5, Modifier.align(Alignment.Center).padding(horizontal = 24.dp))
-                    lines.isEmpty() -> Label(Lyrics.status.ifEmpty { stringResource(R.string.lyrics_none) }, Typography.subtitle, c.textMuted, 3, Modifier.align(Alignment.Center))
-                    else -> LazyColumn(Modifier.fillMaxSize(), state = list, verticalArrangement = Arrangement.spacedBy(if (full) 14.dp else 8.dp)) {
-                        item { Spacer(Modifier.height(if (timed) 40.dp else 0.dp)) }
-                        itemsIndexed(lines) { i, line ->
-                            val now = i == current
-                            val past = timed && i < current
-                            val style = if (full) Typography.title.copy(fontSize = if (now) 38.sp else 30.sp) else Typography.subtitle.copy(fontSize = if (now) 26.sp else 20.sp)
-                            Label(
-                                line.text.ifBlank { "♪" },
-                                style.copy(fontWeight = if (now) FontWeight.Bold else FontWeight.Medium, textAlign = TextAlign.Center),
-                                when {
-                                    now -> c.accent
-                                    past -> c.textMuted.copy(alpha = 0.55f)
-                                    else -> c.textMuted
-                                },
-                                3,
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = line.ms != null && song.seekable) { line.ms?.let { music.seekTo(it) } }.padding(vertical = 2.dp),
-                            )
-                        }
-                        item { Spacer(Modifier.height(if (timed) 200.dp else 20.dp)) }
-                    }
-                }
-            }
-            if (full) {
-                Spacer(Modifier.height(10.dp))
-                if (song != null && song.durationMs > 0) {
-                    val fraction = (pos.toFloat() / song.durationMs).coerceIn(0f, 1f)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Label(clock(pos), Typography.small, c.textMuted, 1)
-                        Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(c.line)) {
-                            Box(Modifier.fillMaxWidth(fraction).height(6.dp).background(c.primary))
-                        }
-                        Label(clock(song.durationMs), Typography.small, c.textMuted, 1)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(Icons.previous, { music.previous() }, size = 88.dp)
-                    Spacer(Modifier.width(28.dp))
-                    IconButton(if (song?.playing == true) Icons.pause else Icons.play, { music.toggle() }, size = 104.dp, background = c.primary, color = c.onPrimary)
-                    Spacer(Modifier.width(28.dp))
-                    IconButton(Icons.next, { music.next() }, size = 88.dp)
-                }
+                item { Spacer(Modifier.height(if (timed) 200.dp else 20.dp)) }
             }
         }
     }
