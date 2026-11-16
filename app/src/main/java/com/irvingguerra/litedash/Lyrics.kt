@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -318,7 +319,7 @@ object SongInfo {
                 }
             }
         }
-        val art = if (pic.isFile) runCatching { android.graphics.BitmapFactory.decodeFile(pic.path)?.let { androidx.compose.ui.graphics.asImageBitmap(it) } }.getOrNull() else null
+        val art = if (pic.isFile) runCatching { android.graphics.BitmapFactory.decodeFile(pic.path)?.let { it.asImageBitmap() } }.getOrNull() else null
         return Info(o.optString("title").ifBlank { title }, o.optString("artist").ifBlank { artist }, o.optString("album"), o.optString("year"), o.optString("genre"), art)
     }
 }
@@ -327,7 +328,7 @@ object SongInfo {
 @Composable
 private fun Cover(song: Song?, info: SongInfo.Info?, size: androidx.compose.ui.unit.Dp) {
     val c = LocalColors.current
-    val art = info?.art ?: song?.artwork?.let { androidx.compose.ui.graphics.asImageBitmap(it) }
+    val art = info?.art ?: song?.artwork?.let { it.asImageBitmap() }
     Box(Modifier.width(size).height(size).clip(RoundedCornerShape(if (size > 100.dp) 16.dp else 10.dp)).background(c.surfaceHigh), contentAlignment = Alignment.Center) {
         if (art != null) androidx.compose.foundation.Image(art, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
         else com.irvingguerra.litedash.core.ui.Icon(Icons.music, c.textMuted, size * 0.4f)
