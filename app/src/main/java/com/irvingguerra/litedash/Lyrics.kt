@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.irvingguerra.litedash.core.ui.Card
+import com.irvingguerra.litedash.core.ui.Https
 import com.irvingguerra.litedash.core.ui.IconButton
 import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
@@ -121,7 +123,7 @@ object Lyrics {
         val cache = File(File(context.filesDir, "letras").apply { mkdirs() }, md5("$artist|$title".lowercase()) + ".lrc")
         if (cache.isFile) return parse(cache.readText())
         // 3) LRCLIB.
-        val text = lrclib(artist, title, track?.album.takeIf { sameSong }, song.durationMs) ?: return emptyList()
+        val text = lrclib(context, artist, title, track?.album.takeIf { sameSong }, song.durationMs) ?: return emptyList()
         runCatching { cache.writeText(text) }
         return parse(text)
     }
@@ -151,7 +153,8 @@ object Lyrics {
         else -> null
     }
 
-    private fun lrclib(artist: String, title: String, album: String?, durationMs: Long): String? {
+    private fun lrclib(context: Context, artist: String, title: String, album: String?, durationMs: Long): String? {
+        fun get(url: String) = get(context, url)
         fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
         val seconds = if (durationMs > 0) "&duration=${durationMs / 1000}" else ""
         val albumPart = album?.takeIf { it.isNotBlank() }?.let { "&album_name=${enc(it)}" }.orEmpty()
@@ -175,8 +178,9 @@ object Lyrics {
         return o.optString("syncedLyrics").takeIf { it.isNotBlank() && it != "null" } ?: o.optString("plainLyrics").takeIf { it.isNotBlank() && it != "null" }
     }
 
-    private fun get(url: String): String? {
-        val connection = URL(url).openConnection() as HttpURLConnection
+    /** Con [Https.open]: en Android 5 a 7.1 suma las raíces nuevas que la pantalla no trae (si no, el https truena). */
+    private fun get(context: Context, url: String): String? {
+        val connection = Https.open(context, url)
         try {
             connection.connectTimeout = 10_000
             connection.readTimeout = 15_000
@@ -239,6 +243,12 @@ private fun rememberFinePosition(song: Song?) = produceState(song?.currentPositi
 fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifier: Modifier = Modifier) {
     val c = LocalColors.current
     val context = LocalContext.current
+    // Cuenta como usuaria de la música mientras se ve: en pantalla completa la música en grande ya no está debajo y,
+    // sin esto, LiteDash dejaba de escuchar qué suena (sin canción, sin letra y los botones sin efecto).
+    DisposableEffect(music) {
+        music.use()
+        onDispose { music.release() }
+    }
     val song = music.song
     LaunchedEffect(song?.title, song?.artist) { Lyrics.load(context, song) }
     val pos by rememberFinePosition(song)
