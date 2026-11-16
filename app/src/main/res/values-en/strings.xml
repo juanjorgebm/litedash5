@@ -838,4 +838,9 @@
     <string name="assistant_model_flash">fast and good, decent free quota</string>
     <string name="assistant_model_lite">fastest, largest free quota</string>
     <string name="assistant_model_pro">smartest, but slow with very few free questions</string>
+    <string name="lyrics_title">Lyrics</string>
+    <string name="lyrics_searching">Looking for the lyrics…</string>
+    <string name="lyrics_none">No lyrics found for this song.</string>
+    <string name="lyrics_offline">Could not look up the lyrics (no internet?).</string>
+    <string name="lyrics_nothing">Play a song and its lyrics show up here.</string>
 </resources>

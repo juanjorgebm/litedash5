@@ -121,6 +121,8 @@ sealed interface Panel {
     data object Contacts : Panel
     data object Assistant : Panel
     data object Photos : Panel
+    /** La letra de lo que suena a pantalla completa, con los controles. */
+    data object Lyrics : Panel
     /** El mapa a pantalla completa con los lugares cercanos; [data] es el aspecto de la pieza que se tocó. */
     data class MapFull(val data: String) : Panel
     data object Settings : Panel
@@ -620,7 +622,12 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
                     // Con algo a pantalla completa encima, lo que gasta en los widgets (GPS, mapa) descansa.
                     CompositionLocalProvider(LocalHomeCovered provides (carShown || tiresShown || parked)) {
                         if (big != null) HalfScreen(
-                            side = {
+                            side = side@{
+                                // Con la música en grande, al lado va la letra (como karaoke) en vez del auto.
+                                if (big == Expanded.MUSIC) {
+                                    LyricsCard(d.music, full = false, onFull = { panel = Panel.Lyrics }, Modifier.padding(6.dp))
+                                    return@side
+                                }
                                 val shown = d.dashboard.shown
                                 val hero = shown.firstOrNull { it.type == (if (d.prefs.splitRoad) TileTypes.ROAD else TileTypes.CAR) } ?: shown.firstOrNull { it.cardless }
                                 if (hero != null) TileContent(d, hero, apps, car, revision, actions) else ClockTile(d.prefs.driverName, d.weather)
@@ -671,6 +678,7 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
             Panel.Contacts -> ContactsScreen(close = { panel = null })
             Panel.Assistant -> AssistantScreen(d, close = { panel = null })
             Panel.Photos -> PhotosScreen(close = { panel = null })
+            Panel.Lyrics -> LyricsScreen(d.music, close = { panel = null })
             Panel.WeatherFull -> WeatherFullScreen(d, close = { panel = null })
             Panel.RadioFull -> RadioScreen({ panel = null }, Modifier.fillMaxSize())
             is Panel.MapFull -> MapFullScreen(d, p.data, mapApp(d, apps), close = { panel = null })

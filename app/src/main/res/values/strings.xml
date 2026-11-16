@@ -859,4 +859,9 @@
     <string name="assistant_model_flash">rápido y bueno, buen cupo gratis</string>
     <string name="assistant_model_lite">el más rápido, el cupo gratis más grande</string>
     <string name="assistant_model_pro">el más inteligente, pero lento y con muy pocas preguntas gratis</string>
+    <string name="lyrics_title">Letra</string>
+    <string name="lyrics_searching">Buscando la letra…</string>
+    <string name="lyrics_none">No encontré la letra de esta canción.</string>
+    <string name="lyrics_offline">No se pudo buscar la letra (¿sin internet?).</string>
+    <string name="lyrics_nothing">Pon una canción y aquí sale su letra.</string>
 </resources>
