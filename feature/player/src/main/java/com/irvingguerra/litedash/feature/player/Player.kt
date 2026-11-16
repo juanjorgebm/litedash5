@@ -175,6 +175,13 @@ object Player {
         publishState()
     }
 
+    /** Dónde va de verdad la canción de la USB (lo que dice el reproductor, sin calcularlo con el reloj); null si no aplica. */
+    fun position(): Long? {
+        val p = player ?: return null
+        if (state.current !is Track || state.buffering) return null
+        return runCatching { p.currentPosition.toLong() }.getOrNull()
+    }
+
     /** Para del todo: suelta el audio, la sesión y el aviso. */
     fun stop() {
         requests++

@@ -842,6 +842,7 @@
     <string name="lyrics_searching">Looking for the lyrics…</string>
     <string name="lyrics_none">No lyrics found for this song.</string>
     <string name="lyrics_offline">Could not look up the lyrics.</string>
+    <string name="lyrics_sync">Sync</string>
     <string name="usb_search_songs">Songs</string>
     <string name="usb_search_artists">Artists</string>
     <string name="usb_search_genres">Genres</string>

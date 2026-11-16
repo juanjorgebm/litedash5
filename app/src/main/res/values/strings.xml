@@ -863,6 +863,7 @@
     <string name="lyrics_searching">Buscando la letra…</string>
     <string name="lyrics_none">No encontré la letra de esta canción.</string>
     <string name="lyrics_offline">No se pudo buscar la letra.</string>
+    <string name="lyrics_sync">Sincronía</string>
     <string name="usb_search_songs">Canciones</string>
     <string name="usb_search_artists">Cantantes</string>
     <string name="usb_search_genres">Estilos</string>

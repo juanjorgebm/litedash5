@@ -77,8 +77,21 @@ object Lyrics {
     var forSong by mutableStateOf<String?>(null)
         private set
 
+    /** Ajuste a mano de la sincronía de esta canción (ms; positivo = la letra va más adelante). */
+    var offset by mutableStateOf(0L)
+        private set
+
     private val main = Handler(Looper.getMainLooper())
     private var loading: String? = null
+
+    private fun sync(context: Context) = context.getSharedPreferences("letras_sincronia", Context.MODE_PRIVATE)
+
+    /** Corre la letra [by] ms para la canción de ahora y lo recuerda. */
+    fun shift(context: Context, by: Long) {
+        val key = forSong ?: return
+        offset = (offset + by).coerceIn(-30_000L, 30_000L)
+        sync(context).edit().putLong(key, offset).apply()
+    }
 
     private fun keyOf(song: Song) = "${song.artist.trim()}|${song.title.trim()}".lowercase()
 
@@ -92,6 +105,7 @@ object Lyrics {
         if (key == forSong || key == loading) return
         loading = key
         lines = emptyList()
+        offset = 0L
         status = context.getString(R.string.lyrics_searching)
         val app = context.applicationContext
         val track = Player.state.current as? Track
@@ -101,6 +115,7 @@ object Lyrics {
                 if (loading != key) return@post
                 loading = null
                 forSong = key
+                offset = sync(app).getLong(key, 0L)
                 val found = result.getOrNull().orEmpty()
                 lines = found
                 status = when {
@@ -121,7 +136,7 @@ object Lyrics {
         }
         // 2) La que ya se bajó antes.
         val (rawArtist, rawTitle) = names(song, if (sameSong) track else null)
-        val dir = File(context.filesDir, "letras").apply { mkdirs() }
+        val dir = File(context.filesDir, "letras2").apply { mkdirs() }
         File(dir, md5("$rawArtist|$rawTitle".lowercase()) + ".lrc").takeIf { it.isFile }?.let { return parse(it.readText()) }
         // Con los datos reales de iTunes (el archivo suele traer "Aquí_Abajo(256k)" y sin artista: así LRCLIB no la halla).
         val real = runCatching { SongInfo.lookup(context, rawArtist, rawTitle, song.durationMs) }.getOrNull()
@@ -181,15 +196,18 @@ object Lyrics {
         val list = get("https://lrclib.net/api/search?track_name=${enc(title)}" + (if (artist.isNotBlank()) "&artist_name=${enc(artist)}" else ""))?.let { JSONArray(it) } ?: return null
         var best: JSONObject? = null
         var bestScore = Double.MAX_VALUE
+        var bestDiff = 0.0
         for (i in 0 until list.length()) {
             val o = list.optJSONObject(i) ?: continue
             if (o.optString("syncedLyrics").isBlank() && o.optString("plainLyrics").isBlank()) continue
             val diff = if (durationMs > 0) Math.abs(o.optDouble("duration", 0.0) - durationMs / 1000.0) else 0.0
             val score = diff + if (o.optString("syncedLyrics").isBlank() || o.optString("syncedLyrics") == "null") 30 else 0
-            if (score < bestScore) { bestScore = score; best = o }
+            if (score < bestScore) { bestScore = score; best = o; bestDiff = diff }
         }
         val o = best ?: return null
-        return o.optString("syncedLyrics").takeIf { it.isNotBlank() && it != "null" } ?: o.optString("plainLyrics").takeIf { it.isNotBlank() && it != "null" }
+        // Otra versión de la canción (más larga o más corta) corre todas las líneas: entonces solo el texto, sin tiempos.
+        val synced = o.optString("syncedLyrics").takeIf { it.isNotBlank() && it != "null" && (durationMs <= 0 || bestDiff <= 3.0) }
+        return synced ?: o.optString("plainLyrics").takeIf { it.isNotBlank() && it != "null" }
     }
 
     /** Respaldo: lyrics.ovh (otro servicio libre, con otro certificado). */
@@ -251,10 +269,12 @@ object Lyrics {
 @Composable
 private fun rememberFinePosition(song: Song?) = produceState(song?.currentPosition() ?: 0L, song) {
     if (song == null) return@produceState
-    value = song.currentPosition()
+    // Con el reproductor de LiteDash se le pregunta al reproductor (exacto); con otra app, se calcula con el reloj.
+    fun now() = (if (song.title == (Player.state.current as? Track)?.title) Player.position() else null) ?: song.currentPosition()
+    value = now()
     while (song.playing) {
-        delay(250)
-        value = song.currentPosition()
+        delay(200)
+        value = now()
     }
 }
 
@@ -440,6 +460,18 @@ fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifi
                         // Buscar en la USB (por canción, cantante, estilo o carpeta).
                         IconButton(Icons.search, { searching = true }, size = 64.dp)
                     }
+                    // Ajuste fino si la letra va adelantada o atrasada (se recuerda por canción).
+                    if (Lyrics.lines.any { it.ms != null }) Row(
+                        Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(14.dp)).background(c.surfaceHigh).padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(Icons.minus, { Lyrics.shift(context, -500) }, size = 52.dp)
+                        Label(
+                            if (Lyrics.offset == 0L) stringResource(R.string.lyrics_sync) else "%+.1f s".format(Lyrics.offset / 1000f),
+                            Typography.small, if (Lyrics.offset == 0L) c.textMuted else c.accent, 1, Modifier.padding(horizontal = 6.dp),
+                        )
+                        IconButton(Icons.plus, { Lyrics.shift(context, 500) }, size = 52.dp)
+                    }
                 }
             }
         } else Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
@@ -464,7 +496,7 @@ private fun LyricsLines(music: MusicRepository, song: Song?, pos: Long, full: Bo
     val lines = if (song != null && Lyrics.forSong == "${song.artist.trim()}|${song.title.trim()}".lowercase()) Lyrics.lines else emptyList()
     val timed = lines.any { it.ms != null }
     // Medio segundo antes: así la línea aparece cuando empieza a cantarse, no tarde.
-    val current = if (timed) lines.indexOfLast { (it.ms ?: Long.MAX_VALUE) <= pos + 500 } else -1
+    val current = if (timed) lines.indexOfLast { (it.ms ?: Long.MAX_VALUE) <= pos + Lyrics.offset + 300 } else -1
     val list = rememberLazyListState()
     BoxWithConstraints(modifier) {
         val middle = with(LocalDensity.current) { (maxHeight / 3).roundToPx() }
@@ -488,7 +520,7 @@ private fun LyricsLines(music: MusicRepository, song: Song?, pos: Long, full: Bo
                             else -> c.textMuted
                         },
                         3,
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = line.ms != null && song.seekable) { line.ms?.let { music.seekTo(it) } }.padding(vertical = 2.dp),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = line.ms != null && song.seekable) { line.ms?.let { music.seekTo((it - Lyrics.offset).coerceAtLeast(0L)) } }.padding(vertical = 2.dp),
                     )
                 }
                 item { Spacer(Modifier.height(if (timed) 200.dp else 20.dp)) }
