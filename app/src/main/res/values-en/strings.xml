@@ -843,6 +843,11 @@
     <string name="lyrics_none">No lyrics found for this song.</string>
     <string name="lyrics_offline">Could not look up the lyrics.</string>
     <string name="lyrics_sync">Sync</string>
+    <string name="usb_scan_start">Update data for the whole USB</string>
+    <string name="usb_scan_stop">Stop</string>
+    <string name="usb_scan_running">Checking %1$d of %2$d · %3$d with data</string>
+    <string name="usb_scan_done">Done: %1$d of %2$d songs with data, %3$d MP3 updated.</string>
+    <string name="usb_scan_failed">%1$d could not be written to the USB.</string>
     <string name="usb_search_songs">Songs</string>
     <string name="usb_search_artists">Artists</string>
     <string name="usb_search_genres">Genres</string>

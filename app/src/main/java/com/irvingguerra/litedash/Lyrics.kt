@@ -327,6 +327,8 @@ object SongInfo {
      * Los datos reales en iTunes (title, artist, album, year, genre, art, ms), guardados en la pantalla; null si no
      * está. Lee la red: fuera del hilo principal.
      */
+    fun isCached(context: Context, artist: String, title: String) = File(File(context.filesDir, "canciones"), idOf(artist, title) + ".json").isFile
+
     fun lookup(context: Context, artist: String, title: String, durationMs: Long): JSONObject? {
         val dir = File(context.filesDir, "canciones").apply { mkdirs() }
         val json = File(dir, idOf(artist, title) + ".json")

@@ -864,6 +864,11 @@
     <string name="lyrics_none">No encontré la letra de esta canción.</string>
     <string name="lyrics_offline">No se pudo buscar la letra.</string>
     <string name="lyrics_sync">Sincronía</string>
+    <string name="usb_scan_start">Actualizar datos de toda la USB</string>
+    <string name="usb_scan_stop">Detener</string>
+    <string name="usb_scan_running">Revisando %1$d de %2$d · %3$d con datos</string>
+    <string name="usb_scan_done">Listo: %1$d de %2$d canciones con datos, %3$d MP3 actualizados.</string>
+    <string name="usb_scan_failed">%1$d no se pudieron escribir en la USB.</string>
     <string name="usb_search_songs">Canciones</string>
     <string name="usb_search_artists">Cantantes</string>
     <string name="usb_search_genres">Estilos</string>

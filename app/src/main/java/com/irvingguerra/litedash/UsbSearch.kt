@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.irvingguerra.litedash.core.ui.Button
 import com.irvingguerra.litedash.core.ui.Icon
 import com.irvingguerra.litedash.core.ui.IconButton
 import com.irvingguerra.litedash.core.ui.Icons
@@ -61,7 +62,9 @@ fun UsbSearch(close: () -> Unit, modifier: Modifier = Modifier) {
     val unknownGenre = stringResource(R.string.usb_search_no_genre)
     val unknownArtist = stringResource(R.string.usb_search_no_artist)
     val root = stringResource(R.string.usb_search_root)
-    val items by produceState<List<Item>?>(null) {
+    val scan = UsbTags.progress
+    // Al terminar de revisar la USB, la lista se vuelve a leer con los datos nuevos.
+    val items by produceState<List<Item>?>(null, scan?.running) {
         value = withContext(Dispatchers.IO) { if (Library.hasPermission(context)) load(context, unknownGenre) else emptyList() }
     }
     var query by remember { mutableStateOf("") }
@@ -84,6 +87,29 @@ fun UsbSearch(close: () -> Unit, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (g in Group.values()) Chip(stringResource(g.label), g == group) { group = g; open = null }
+        }
+        Spacer(Modifier.height(10.dp))
+        // Bajar los datos reales de todas las canciones (y escribirlos en los MP3), con su barra de avance.
+        if (scan?.running == true) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Label(stringResource(R.string.usb_scan_running, scan.done, scan.total, scan.found), Typography.small, c.text, 1)
+                    Spacer(Modifier.height(6.dp))
+                    val fraction = if (scan.total > 0) scan.done.toFloat() / scan.total else 0f
+                    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(c.line)) {
+                        Box(Modifier.fillMaxWidth(fraction).height(8.dp).background(c.accent))
+                    }
+                }
+                Button(stringResource(R.string.usb_scan_stop), { UsbTags.stopScan() })
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(stringResource(R.string.usb_scan_start), { UsbTags.scanAll(context) }, primary = true)
+                if (scan != null) Label(
+                    stringResource(R.string.usb_scan_done, scan.found, scan.total, scan.written) + if (scan.failed > 0) " " + stringResource(R.string.usb_scan_failed, scan.failed) else "",
+                    Typography.small, c.textMuted, 2, Modifier.weight(1f),
+                )
+            }
         }
         Spacer(Modifier.height(10.dp))
         val all = items

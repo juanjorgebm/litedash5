@@ -9,6 +9,9 @@ import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.irvingguerra.litedash.feature.player.Library
 import com.irvingguerra.litedash.feature.player.Player
@@ -27,7 +30,14 @@ import java.util.concurrent.Executors
  * ya no está sonando, para no tocar el archivo abierto).
  */
 object UsbTags {
-    class Fix(val title: String, val artist: String, val album: String, val year: String, val genre: String, val written: Boolean)
+    class Fix(val title: String, val artist: String, val album: String, val year: String, val genre: String, val written: Boolean, val art: String = "")
+
+    /** Cómo va la revisión de toda la USB (botón "Actualizar datos" del buscador). */
+    class Progress(val done: Int, val total: Int, val found: Int, val written: Int, val failed: Int, val running: Boolean)
+
+    var progress by mutableStateOf<Progress?>(null)
+        private set
+    @Volatile private var cancel = false
 
     private val io = Executors.newSingleThreadExecutor { Thread(it, "usb-tags").apply { priority = Thread.MIN_PRIORITY } }
     private val main = Handler(Looper.getMainLooper())
@@ -44,7 +54,7 @@ object UsbTags {
         runCatching {
             val o = JSONObject(store(context).readText())
             for (k in o.keys()) o.optJSONObject(k)?.let { f ->
-                map[k] = Fix(f.optString("title"), f.optString("artist"), f.optString("album"), f.optString("year"), f.optString("genre"), f.optBoolean("written"))
+                map[k] = Fix(f.optString("title"), f.optString("artist"), f.optString("album"), f.optString("year"), f.optString("genre"), f.optBoolean("written"), f.optString("art"))
             }
         }
         fixes = map
@@ -53,7 +63,7 @@ object UsbTags {
     @Synchronized
     private fun save(context: Context) {
         val o = JSONObject()
-        for ((k, f) in load(context)) o.put(k, JSONObject().put("title", f.title).put("artist", f.artist).put("album", f.album).put("year", f.year).put("genre", f.genre).put("written", f.written))
+        for ((k, f) in load(context)) o.put(k, JSONObject().put("title", f.title).put("artist", f.artist).put("album", f.album).put("year", f.year).put("genre", f.genre).put("written", f.written).put("art", f.art))
         runCatching { store(context).writeText(o.toString()) }
     }
 
@@ -82,7 +92,7 @@ object UsbTags {
         if (fixed == null && !matches(track, o)) return
         val fix = fixed ?: Fix(
             o.optString("title").ifBlank { track.title }, o.optString("artist").ifBlank { track.artist }, o.optString("album").ifBlank { track.album },
-            o.optString("year"), o.optString("genre"), written = false,
+            o.optString("year"), o.optString("genre"), written = false, art = o.optString("art"),
         ).also {
             synchronized(this) { load(context)[track.key] = it }
             save(context)
@@ -113,17 +123,70 @@ object UsbTags {
         val pending = load(context).filter { !it.value.written && it.key != playing }
         for ((key, fix) in pending) {
             val track = tracks.firstOrNull { it.key == key } ?: continue
-            val path = pathOf(context, track.uri) ?: continue
-            if (!path.endsWith(".mp3", ignoreCase = true)) { mark(context, key, fix); continue }
-            val file = File(path)
-            val o = runCatching { SongInfo.lookup(context, fix.artist, fix.title, track.durationMs) }.getOrNull()
-            val jpeg = o?.let { SongInfo.picture(context, it) }?.takeIf { it.isFile && it.length() < 1_500_000 }?.readBytes()
-            val ok = runCatching { Id3.write(file, fix, jpeg) }.onFailure { Log.w("LiteDash", "No se pudo escribir ${file.name}: ${it.message}") }.isSuccess
-            // Si la USB no deja escribir no se reintenta cada vez: lo corregido ya se ve igual en LiteDash.
-            mark(context, key, fix)
-            if (ok) runCatching { MediaScannerConnection.scanFile(context, arrayOf(file.path), null, null) }
+            writeOne(context, track, fix)
         }
     }
+
+    /** Escribe las etiquetas de [track] en la USB; true si quedaron escritas. */
+    private fun writeOne(context: Context, track: Track, fix: Fix): Boolean {
+        val path = pathOf(context, track.uri) ?: return false
+        if (!path.endsWith(".mp3", ignoreCase = true)) { mark(context, track.key, fix); return false }
+        val file = File(path)
+        val o = if (fix.art.isNotBlank()) JSONObject().put("art", fix.art) else runCatching { SongInfo.lookup(context, fix.artist, fix.title, track.durationMs) }.getOrNull()
+        val jpeg = o?.let { runCatching { SongInfo.picture(context, it) }.getOrNull() }?.takeIf { it.isFile && it.length() < 1_500_000 }?.readBytes()
+        val ok = runCatching { Id3.write(file, fix, jpeg) }.onFailure { Log.w("LiteDash", "No se pudo escribir ${file.name}: ${it.message}") }.isSuccess
+        // Si la USB no deja escribir no se reintenta cada vez: lo corregido ya se ve igual en LiteDash.
+        mark(context, track.key, fix)
+        if (ok) runCatching { MediaScannerConnection.scanFile(context, arrayOf(file.path), null, null) }
+        return ok
+    }
+
+    /**
+     * Revisa toda la USB: busca los datos reales de cada canción que no los tenga y escribe sus etiquetas (menos la
+     * que está sonando, que se escribe al cambiar). Va despacio con iTunes (deja de contestar si se le pide mucho).
+     */
+    fun scanAll(context: Context) {
+        if (progress?.running == true) return
+        val app = context.applicationContext
+        cancel = false
+        progress = Progress(0, 0, 0, 0, 0, running = true)
+        io.execute {
+            val tracks = runCatching { Library.find(app).second }.getOrNull().orEmpty()
+            var found = 0; var written = 0; var failed = 0
+            fun report(i: Int, running: Boolean) { val p = Progress(i, tracks.size, found, written, failed, running); main.post { progress = p } }
+            report(0, true)
+            for ((i, track) in tracks.withIndex()) {
+                if (cancel) break
+                var fix = load(app)[track.key]
+                if (fix == null) {
+                    val (artist, title) = Lyrics.names(track.title, track.artist, track)
+                    val cached = SongInfo.isCached(app, artist, title)
+                    val o = runCatching { SongInfo.lookup(app, artist, title, track.durationMs) }.getOrNull()
+                    if (o != null && matches(track, o)) {
+                        fix = Fix(
+                            o.optString("title").ifBlank { track.title }, o.optString("artist").ifBlank { track.artist }, o.optString("album").ifBlank { track.album },
+                            o.optString("year"), o.optString("genre"), written = false, art = o.optString("art"),
+                        )
+                        synchronized(this) { load(app)[track.key] = fix }
+                        save(app)
+                        runCatching { SongInfo.picture(app, o) }
+                        val f = fix
+                        main.post { Library.retag(track.key, f.title, f.artist, f.album); Player.retag(track.key, f.title, f.artist, f.album, null) }
+                    }
+                    // iTunes acepta unas 20 búsquedas por minuto.
+                    if (!cached) Thread.sleep(3_000)
+                }
+                if (fix != null) {
+                    found++
+                    if (!fix.written && track.key != Player.state.current?.key) { if (writeOne(app, track, fix)) written++ else failed++ }
+                }
+                report(i + 1, true)
+            }
+            report(tracks.size, false)
+        }
+    }
+
+    fun stopScan() { cancel = true }
 
     private fun mark(context: Context, key: String, fix: Fix) {
         synchronized(this) { load(context)[key] = Fix(fix.title, fix.artist, fix.album, fix.year, fix.genre, written = true) }
