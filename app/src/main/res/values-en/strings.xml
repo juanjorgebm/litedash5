@@ -848,6 +848,10 @@
     <string name="usb_scan_running">Checking %1$d of %2$d · %3$d with data</string>
     <string name="usb_scan_done">Done: %1$d of %2$d songs with data, %3$d MP3 updated.</string>
     <string name="usb_scan_failed">%1$d could not be written to the USB.</string>
+    <string name="match_wrong">Not this song? Fix it</string>
+    <string name="match_title">Which song is it? Search and tap the right one</string>
+    <string name="match_search">Search</string>
+    <string name="match_none">None: leave it without data</string>
     <string name="usb_search_songs">Songs</string>
     <string name="usb_search_artists">Artists</string>
     <string name="usb_search_genres">Genres</string>

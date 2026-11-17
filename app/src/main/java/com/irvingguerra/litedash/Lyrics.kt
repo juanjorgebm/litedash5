@@ -136,7 +136,7 @@ object Lyrics {
         }
         // 2) La que ya se bajó antes.
         val (rawArtist, rawTitle) = names(song, if (sameSong) track else null)
-        val dir = File(context.filesDir, "letras2").apply { mkdirs() }
+        val dir = File(context.filesDir, "letras3").apply { mkdirs() }
         File(dir, md5("$rawArtist|$rawTitle".lowercase()) + ".lrc").takeIf { it.isFile }?.let { return parse(it.readText()) }
         // Con los datos reales de iTunes (el archivo suele traer "Aquí_Abajo(256k)" y sin artista: así LRCLIB no la halla).
         val real = runCatching { SongInfo.lookup(context, rawArtist, rawTitle, song.durationMs) }.getOrNull()
@@ -158,8 +158,10 @@ object Lyrics {
 
     fun names(songTitle: String, songArtist: String, track: Track?): Pair<String, String> {
         var artist = songArtist.trim()
-        var title = songTitle.trim()
-        val file = track?.file?.substringBeforeLast('.')
+        // Sin el número de pista del principio ("11 Juro", "1-13 KAROL G…", "07. …").
+        val number = Regex("""^\d{1,3}(?:[-.]\d{1,3})?(?:\s*[-._]\s*|\s+)""")
+        var title = songTitle.trim().replace('_', ' ').replace(number, "")
+        val file = track?.file?.substringBeforeLast('.')?.replace('_', ' ')?.replace(number, "")
         val unknown = artist.isBlank() || artist.equals("<unknown>", true) || artist.contains("desconocido", true)
         if (unknown && title.contains(" - ")) {
             artist = title.substringBefore(" - ").trim(); title = title.substringAfter(" - ").trim()
@@ -327,14 +329,45 @@ object SongInfo {
      * Los datos reales en iTunes (title, artist, album, year, genre, art, ms), guardados en la pantalla; null si no
      * está. Lee la red: fuera del hilo principal.
      */
-    fun isCached(context: Context, artist: String, title: String) = File(File(context.filesDir, "canciones"), idOf(artist, title) + ".json").isFile
+    fun isCached(context: Context, artist: String, title: String) = cacheFile(context, artist, title).isFile
 
+    private fun cacheFile(context: Context, artist: String, title: String) = File(File(context.filesDir, "canciones2").apply { mkdirs() }, idOf(artist, title) + ".json")
+
+    /**
+     * Los datos reales en iTunes (title, artist, album, year, genre, art, ms), guardados en la pantalla; null si no
+     * hay uno que de verdad sea esa canción (mejor nada que otra canción). Lee la red: fuera del hilo principal.
+     */
     fun lookup(context: Context, artist: String, title: String, durationMs: Long): JSONObject? {
-        val dir = File(context.filesDir, "canciones").apply { mkdirs() }
-        val json = File(dir, idOf(artist, title) + ".json")
-        if (json.isFile) return runCatching { JSONObject(json.readText()) }.getOrNull()
-        val term = URLEncoder.encode("$artist $title".trim(), "UTF-8")
-        val connection = Https.open(context, "https://itunes.apple.com/search?media=music&entity=song&limit=5&term=$term")
+        val json = cacheFile(context, artist, title)
+        if (json.isFile) return runCatching { JSONObject(json.readText()) }.getOrNull()?.takeIf { !it.optBoolean("none") }
+        // Se busca con artista y título; si no sale, solo con el título (el artista del archivo puede venir mal).
+        var best: JSONObject? = null
+        for (term in listOf("$artist $title".trim(), title).distinct()) {
+            var bestScore = Int.MAX_VALUE
+            for (r in itunes(context, term, 10)) {
+                val sc = score(r, artist, title, durationMs) ?: continue
+                if (sc < bestScore) { bestScore = sc; best = r }
+            }
+            if (best != null || artist.isBlank()) break
+        }
+        val out = best?.let { toInfo(it) }
+        runCatching { json.writeText((out ?: JSONObject().put("none", true)).toString()) }
+        return out
+    }
+
+    /** Lo que da iTunes para [term], tal cual (para elegir a mano la canción correcta). */
+    fun search(context: Context, term: String): List<JSONObject> = itunes(context, term, 15).map { toInfo(it) }
+
+    /** El usuario eligió a mano qué canción es (null = ninguna): se recuerda para esos nombres. */
+    fun choose(context: Context, artist: String, title: String, o: JSONObject?) {
+        runCatching { cacheFile(context, artist, title).writeText((o ?: JSONObject().put("none", true)).toString()) }
+        if (o != null) runCatching { cacheFile(context, o.optString("artist"), o.optString("title")).writeText(o.toString()) }
+        main.post { forSong = null; info = null }
+    }
+
+    private fun itunes(context: Context, term: String, limit: Int): List<JSONObject> {
+        val q = URLEncoder.encode(term, "UTF-8")
+        val connection = Https.open(context, "https://itunes.apple.com/search?media=music&entity=song&limit=$limit&term=$q")
         val results = try {
             connection.connectTimeout = 10_000
             connection.readTimeout = 15_000
@@ -343,32 +376,52 @@ object SongInfo {
         } finally {
             connection.disconnect()
         }
-        // La que dura parecido, si se sabe la duración.
-        var best: JSONObject? = null
-        var bestDiff = Long.MAX_VALUE
-        for (i in 0 until results.length()) {
-            val r = results.optJSONObject(i) ?: continue
-            val diff = if (durationMs > 0) Math.abs(r.optLong("trackTimeMillis") - durationMs) else i.toLong()
-            if (diff < bestDiff) { bestDiff = diff; best = r }
-        }
-        val r = best ?: return null
-        val out = JSONObject()
-            .put("title", r.optString("trackName"))
-            .put("artist", r.optString("artistName"))
-            .put("album", r.optString("collectionName"))
-            .put("year", r.optString("releaseDate").take(4))
-            .put("genre", r.optString("primaryGenreName"))
-            .put("art", r.optString("artworkUrl100").replace("100x100", "600x600"))
-            .put("ms", r.optLong("trackTimeMillis"))
-            .put("track", r.optInt("trackNumber"))
-        runCatching { json.writeText(out.toString()) }
-        return out
+        return (0 until results.length()).mapNotNull { results.optJSONObject(it) }
     }
+
+    private fun toInfo(r: JSONObject): JSONObject = if (r.has("trackName")) JSONObject()
+        .put("title", r.optString("trackName"))
+        .put("artist", r.optString("artistName"))
+        .put("album", r.optString("collectionName"))
+        .put("year", r.optString("releaseDate").take(4))
+        .put("genre", r.optString("primaryGenreName"))
+        .put("art", r.optString("artworkUrl100").replace("100x100", "600x600"))
+        .put("ms", r.optLong("trackTimeMillis"))
+        .put("track", r.optInt("trackNumber")) else r
+
+    /**
+     * Qué tan seguro es que [r] sea la canción (menos = mejor); null si no lo es: las palabras del título tienen que
+     * coincidir, algún nombre del artista también (si se sabe) y durar parecido (si se sabe).
+     */
+    private fun score(r: JSONObject, artist: String, title: String, durationMs: Long): Int? {
+        val rt = words(r.optString("trackName").replace(Regex("""\s*[(\[].*?[)\]]"""), "").substringBefore(" - "))
+        val qt = words(title.replace(Regex("""\s*[(\[].*?[)\]]"""), ""))
+        val qa = words(artist)
+        val ra = words(r.optString("artistName"))
+        if (rt.isEmpty() || qt.isEmpty()) return null
+        val titleOk = (qt + qa).containsAll(rt) || rt.containsAll(qt)
+        if (!titleOk) return null
+        if (qa.isNotEmpty() && qa.none { it in ra && it.length > 1 } && ra.none { it in qt && it.length > 1 }) return null
+        var sc = (rt - qt).size * 3 + (qt - rt).size * 3
+        val ms = r.optLong("trackTimeMillis")
+        if (durationMs > 0 && ms > 0) {
+            val diff = Math.abs(ms - durationMs)
+            if (diff > 12_000) return null
+            sc += (diff / 1000).toInt()
+        }
+        return sc
+    }
+
+    fun words(s: String): Set<String> =
+        java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+            .split(Regex("[^a-z0-9]+")).filter { it.isNotBlank() && it !in STOP }.toSet()
+
+    private val STOP = setOf("feat", "ft", "featuring", "con", "and", "y", "the", "el", "la", "los", "las", "de", "x")
 
     /** La carátula de [o] bajada a la pantalla (la primera vez la baja); null si no hay. */
     fun picture(context: Context, o: JSONObject): File? {
         val url = o.optString("art").takeIf { it.startsWith("http") } ?: return null
-        val pic = File(File(context.filesDir, "canciones").apply { mkdirs() }, idOf(url, "art") + ".jpg")
+        val pic = File(File(context.filesDir, "canciones2").apply { mkdirs() }, idOf(url, "art") + ".jpg")
         if (!pic.isFile) runCatching {
             val connection = Https.open(context, url)
             try {
@@ -419,6 +472,7 @@ fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifi
     }
     val pos by rememberFinePosition(song)
     var searching by remember { mutableStateOf(false) }
+    var fixing by remember { mutableStateOf(false) }
     val info = if (song != null && SongInfo.forSong == SongInfo.keyOf(song)) SongInfo.info else null
     val title = info?.title ?: song?.title ?: stringResource(R.string.lyrics_title)
     val artist = info?.artist ?: song?.artist?.takeIf { it.isNotBlank() } ?: ""
@@ -432,6 +486,11 @@ fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifi
                     Label(title, Typography.title, c.text, 2, Modifier.fillMaxWidth())
                     if (artist.isNotBlank()) Label(artist, Typography.subtitle, c.accent, 1, Modifier.fillMaxWidth())
                     details(info).takeIf { it.isNotEmpty() }?.let { Label(it, Typography.body, c.textMuted, 2, Modifier.fillMaxWidth()) }
+                    // Canción de la USB mal reconocida (o sin datos): elegir a mano cuál es.
+                    if (song != null && (Player.state.current as? Track)?.title == song.title) Label(
+                        stringResource(R.string.match_wrong), Typography.body, c.accent, 1,
+                        Modifier.clip(RoundedCornerShape(10.dp)).clickable { fixing = true; searching = false }.padding(vertical = 6.dp, horizontal = 4.dp),
+                    )
                     Spacer(Modifier.weight(1f))
                     if (song != null && song.durationMs > 0) {
                         val fraction = (pos.toFloat() / song.durationMs).coerceIn(0f, 1f)
@@ -454,7 +513,9 @@ fun LyricsCard(music: MusicRepository, full: Boolean, onFull: () -> Unit, modifi
                 }
             }
             Box(Modifier.weight(0.58f).fillMaxSize()) {
-                if (searching) UsbSearch(close = { searching = false })
+                val usbTrack = (Player.state.current as? Track)?.takeIf { song != null && it.title == song.title }
+                if (fixing && usbTrack != null && song != null) MatchPicker(song, usbTrack, close = { fixing = false })
+                else if (searching) UsbSearch(close = { searching = false })
                 else {
                     LyricsLines(music, song, pos, full = true, Modifier.fillMaxSize())
                     Column(Modifier.align(Alignment.TopEnd), verticalArrangement = Arrangement.spacedBy(10.dp)) {

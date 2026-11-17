@@ -188,6 +188,34 @@ object UsbTags {
 
     fun stopScan() { cancel = true }
 
+    /**
+     * El usuario dijo qué canción es de verdad ([o], de la búsqueda en iTunes) o que ninguna (null): se recuerda, se
+     * muestra ya y se escribe en el MP3 cuando deje de sonar.
+     */
+    fun choose(context: Context, track: Track, o: JSONObject?) {
+        val app = context.applicationContext
+        io.execute {
+            if (o != null) {
+                val fix = Fix(o.optString("title"), o.optString("artist"), o.optString("album"), o.optString("year"), o.optString("genre"), written = false, art = o.optString("art"))
+                synchronized(this) { load(app)[track.key] = fix }
+                save(app)
+                val art = runCatching { SongInfo.picture(app, o)?.let { android.graphics.BitmapFactory.decodeFile(it.path) } }.getOrNull()
+                main.post {
+                    Library.retag(track.key, fix.title, fix.artist, fix.album)
+                    Player.retag(track.key, fix.title, fix.artist, fix.album, art)
+                }
+            } else {
+                synchronized(this) { load(app).remove(track.key) }
+                save(app)
+                val name = track.file.substringBeforeLast('.')
+                main.post {
+                    Library.retag(track.key, name, "", "")
+                    Player.retag(track.key, name, "", "", null)
+                }
+            }
+        }
+    }
+
     private fun mark(context: Context, key: String, fix: Fix) {
         synchronized(this) { load(context)[key] = Fix(fix.title, fix.artist, fix.album, fix.year, fix.genre, written = true) }
         save(context)

@@ -214,3 +214,64 @@ private fun load(context: Context, unknown: String): List<Item> {
         Item(t, fixes[t.key]?.genre?.takeIf { it.isNotBlank() } ?: byId[id] ?: unknown)
     }
 }
+
+/**
+ * Corregir a mano qué canción es: busca en iTunes (con lo que diga el archivo, o lo que se escriba) y se toca la
+ * correcta; o "Sin datos" si ninguna es. Lo elegido se recuerda y se escribe en el MP3.
+ */
+@Composable
+fun MatchPicker(song: com.irvingguerra.litedash.feature.music.Song, track: Track, close: () -> Unit, modifier: Modifier = Modifier) {
+    val c = LocalColors.current
+    val context = LocalContext.current
+    val start = remember(track.key) { Lyrics.names(track.file.substringBeforeLast('.'), "", track).let { (a, t) -> "$a $t".trim() } }
+    var query by remember(track.key) { mutableStateOf(start) }
+    var asked by remember(track.key) { mutableStateOf(start) }
+    val results by produceState<List<org.json.JSONObject>?>(null, asked) {
+        value = null
+        value = withContext(Dispatchers.IO) { runCatching { SongInfo.search(context, asked) }.getOrDefault(emptyList()) }
+    }
+    fun pick(o: org.json.JSONObject?) {
+        val (artist, title) = Lyrics.names(song, track)
+        SongInfo.choose(context, artist, title, o)
+        // Sin datos: tampoco con el nombre del archivo, que es lo que se mostrará.
+        if (o == null) Lyrics.names(track.file.substringBeforeLast('.'), "", track).let { (a, t) -> SongInfo.choose(context, a, t, null) }
+        UsbTags.choose(context, track, o)
+        close()
+    }
+    Column(modifier.fillMaxSize()) {
+        Label(stringResource(R.string.match_title), Typography.subtitle, c.text, 1)
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TextInput(query, { query = it }, stringResource(R.string.usb_search_hint), Modifier.weight(1f), icon = true)
+            Button(stringResource(R.string.match_search), { asked = query.trim() }, primary = true)
+            IconButton(Icons.close, close, size = 56.dp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(stringResource(R.string.match_none), { pick(null) })
+        Spacer(Modifier.height(8.dp))
+        val list = results
+        when {
+            list == null -> Label(stringResource(R.string.usb_search_loading), Typography.subtitle, c.textMuted, 2, Modifier.padding(20.dp))
+            list.isEmpty() -> Label(stringResource(R.string.usb_search_none), Typography.subtitle, c.textMuted, 2, Modifier.padding(20.dp))
+            else -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(list) { o ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).clickable { pick(o) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.music, c.textMuted, 24.dp)
+                        Spacer(Modifier.padding(6.dp))
+                        Column(Modifier.weight(1f)) {
+                            Label(o.optString("title"), Typography.body, c.text, 1)
+                            val ms = o.optLong("ms")
+                            Label(
+                                listOf(o.optString("artist"), o.optString("album"), o.optString("year"), if (ms > 0) "%d:%02d".format(ms / 60000, ms / 1000 % 60) else "").filter { it.isNotBlank() }.joinToString(" · "),
+                                Typography.small, c.textMuted, 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
