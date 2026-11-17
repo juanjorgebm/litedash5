@@ -1,5 +1,6 @@
 package com.irvingguerra.litedash
 
+import android.os.Build
 import android.content.Context
 import android.media.AudioManager
 import android.view.KeyEvent
@@ -24,6 +25,7 @@ import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
 import com.irvingguerra.litedash.core.ui.Typography
 import com.irvingguerra.litedash.feature.music.MusicRepository
+import androidx.core.content.ContextCompat
 
 /**
  * Qué hace un botón del volante. [stored] es como se guarda (no cambiarlo).
@@ -89,8 +91,11 @@ class WheelKeys(private val context: Context, private val prefs: Preferences) {
         return true
     }
 
+    // Solo Android 5: no hay forma de leer si la música está silenciada.
+    private var mutedLegacy = false
+
     private fun run(action: WheelAction, music: MusicRepository) {
-        val audio = context.getSystemService(AudioManager::class.java)
+        val audio = ContextCompat.getSystemService(context, AudioManager::class.java)!!
         fun adjust(direction: Int) = runCatching {
             audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI)
         }
@@ -108,7 +113,12 @@ class WheelKeys(private val context: Context, private val prefs: Preferences) {
             }
             WheelAction.VOLUME_UP -> adjust(AudioManager.ADJUST_RAISE)
             WheelAction.VOLUME_DOWN -> adjust(AudioManager.ADJUST_LOWER)
-            WheelAction.MUTE -> adjust(AudioManager.ADJUST_TOGGLE_MUTE)
+            WheelAction.MUTE -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) adjust(AudioManager.ADJUST_TOGGLE_MUTE) else runCatching {
+                // Android 5 no conoce ADJUST_TOGGLE_MUTE: se silencia o se regresa a mano.
+                @Suppress("DEPRECATION")
+                audio.setStreamMute(AudioManager.STREAM_MUSIC, !mutedLegacy)
+                mutedLegacy = !mutedLegacy
+            }
             WheelAction.NORMAL, WheelAction.NOTHING -> Unit
             else -> request = action
         }

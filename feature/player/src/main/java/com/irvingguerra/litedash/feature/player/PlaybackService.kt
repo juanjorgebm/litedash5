@@ -51,7 +51,7 @@ class PlaybackService : Service() {
         running = null
         handler.removeCallbacks(leaveForeground)
         // El aviso que quedó suelto en pausa se va con el servicio.
-        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+        ContextCompat.getSystemService(this, NotificationManager::class.java)!!.cancel(NOTIFICATION_ID)
         super.onDestroy()
     }
 
@@ -151,11 +151,11 @@ class PlaybackService : Service() {
 
         /** Vuelve a pintar el aviso con lo que suena. */
         private fun post(context: Context) {
-            runCatching { context.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(context)) }
+            runCatching { ContextCompat.getSystemService(context, NotificationManager::class.java)!!.notify(NOTIFICATION_ID, notification(context)) }
         }
 
         private fun notification(context: Context): Notification = with(context) {
-            val manager = getSystemService(NotificationManager::class.java)
+            val manager = ContextCompat.getSystemService(this, NotificationManager::class.java)!!
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 manager.createNotificationChannel(
                     NotificationChannel(CHANNEL, getString(R.string.player_channel), NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) },
@@ -195,7 +195,7 @@ class PlaybackService : Service() {
         fun stop(context: Context) {
             runCatching { context.stopService(Intent(context, PlaybackService::class.java)) }
             // Sin servicio (no lo dejaron arrancar) el aviso suelto también se va.
-            runCatching { context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID) }
+            runCatching { ContextCompat.getSystemService(context, NotificationManager::class.java)!!.cancel(NOTIFICATION_ID) }
         }
     }
 }

@@ -13,6 +13,7 @@ import androidx.core.net.toUri
 import java.io.File
 import com.irvingguerra.litedash.feature.music.Drive
 import com.irvingguerra.litedash.feature.music.Drives
+import androidx.core.content.ContextCompat
 
 /** Una canción de la memoria (dos con los mismos datos son la misma: tocar USB otra vez no la reinicia). */
 data class Track(
@@ -41,7 +42,17 @@ object Library {
     val permission: String
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
 
-    fun hasPermission(context: Context) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    /** Los datos corregidos por la app (buscados en internet) para cada canción; null = como vienen del archivo. */
+    @Volatile
+    var overrides: ((Track) -> Track)? = null
+
+    /** Cambia en la lista ya leída los datos de una canción (la app los corrigió). */
+    fun retag(key: String, title: String, artist: String, album: String) {
+        val c = cache ?: return
+        cache = c.first to (c.second.first to c.second.second.map { if (it.key == key) it.copy(title = title, artist = artist, album = album) else it })
+    }
+
+    fun hasPermission(context: Context) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     /** El permiso del aviso del reproductor, que solo existe desde Android 13. */
     val noticePermission: List<String>
@@ -98,8 +109,9 @@ object Library {
     /** Todas las canciones de [drive], ordenadas por carpeta y archivo (como se ven en la memoria). */
     private fun tracks(context: Context, drive: Drive): List<Track> {
         val found = if (drive.id.startsWith(FOLDER)) folderTracks(context, drive.id.removePrefix(FOLDER).toUri())
-        else indexed(context, drive).ifEmpty { drive.path?.let { scan(File(it)) }.orEmpty() }
-        return found.sortedWith(compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.folder }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.file })
+        else merged(indexed(context, drive), drive.path?.let { scan(File(it)) }.orEmpty())
+        val fix = overrides
+        return found.map { t -> fix?.let { f -> runCatching { f(t) }.getOrNull() } ?: t }.sortedWith(compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.folder }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.file })
     }
 
     /** Las canciones de la carpeta elegida, por el sistema de documentos. */
@@ -118,6 +130,19 @@ object Library {
             }
             out
         }) { child, name, folder -> Track(DocumentsContract.buildDocumentUriUsingTree(tree, child), name.substringBeforeLast('.'), "", "", folder, 0, name) }
+    }
+
+    /**
+     * El índice de Android en las pantallas de carro suele quedarse con unas pocas canciones de la USB: se recorre
+     * también la memoria y se juntan. De cada archivo se usan los datos del índice si los tiene (artista, álbum y
+     * duración), si no los del recorrido.
+     */
+    private fun merged(indexed: List<Track>, scanned: List<Track>): List<Track> {
+        if (scanned.isEmpty()) return indexed
+        val byKey = indexed.associateBy { it.key }
+        val seen = HashSet<String>()
+        val out = scanned.map { t -> (byKey[t.key] ?: t).also { seen += it.key } }
+        return out + indexed.filter { it.key !in seen }
     }
 
     /** Las de MediaStore (rápido, con artista, álbum y duración). */

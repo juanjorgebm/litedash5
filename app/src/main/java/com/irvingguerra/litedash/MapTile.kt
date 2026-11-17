@@ -132,7 +132,7 @@ private val COMPACT_HEIGHT = 120.dp
  * y nada lo tapa ([LocalHomeCovered]).
  */
 @Composable
-private fun LiveMap(d: Dependencies, look: MapLook, modifier: Modifier, onTap: (() -> Unit)? = null) {
+internal fun LiveMap(d: Dependencies, look: MapLook, modifier: Modifier, onTap: (() -> Unit)? = null) {
     val c = LocalColors.current
     KeepTripRunning(d.trip)
     val context = LocalContext.current

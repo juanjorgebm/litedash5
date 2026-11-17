@@ -56,13 +56,14 @@ import com.irvingguerra.litedash.feature.dashboard.DashboardState
 import com.irvingguerra.litedash.feature.dashboard.Template
 import com.irvingguerra.litedash.feature.dashboard.size
 import com.irvingguerra.litedash.feature.dashboard.suggestedTemplate
+import androidx.core.content.ContextCompat
 
 /** ¿LiteDash ya es la pantalla de inicio? */
 fun isHomeApp(context: Context): Boolean {
     // Android 10+: el rol del sistema. Sin esto, desde Android 11 las otras apps de
     // inicio no se ven y LiteDash creería que es la única.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        runCatching { return context.getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME) }
+        runCatching { return ContextCompat.getSystemService(context, RoleManager::class.java)!!.isRoleHeld(RoleManager.ROLE_HOME) }
     }
     val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
     val resolved = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
@@ -203,7 +204,7 @@ fun rememberRequestHome(): Pair<() -> Unit, Int> {
     val requestRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { returns++ }
     val request = {
         val requested = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && runCatching {
-            val roleManager = context.getSystemService(RoleManager::class.java)
+            val roleManager = ContextCompat.getSystemService(context, RoleManager::class.java)!!
             if (!roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) return@runCatching false
             requestRole.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME))
             true

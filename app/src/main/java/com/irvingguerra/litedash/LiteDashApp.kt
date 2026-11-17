@@ -34,7 +34,11 @@ class LiteDashApp : Application() {
         val music = MusicRepository(this).apply { preferred = prefs.musicApp; onPreferredChanged = { prefs.musicApp = it }; opener = SplitScreen::open
             returnHome = { MainActivity.bringToFront(this@LiteDashApp) } }
         OwnPlayer.wire(this, music, prefs)
+        UsbTags.wire(this)
         music.migrateUsbApp()
+        val trip = TripRepository(this, bus)
+        // El clima sigue dónde está el carro: usa la posición del GPS del viaje.
+        val weather = WeatherRepository(this, prefs).also { w -> w.positionHint = { trip.position } }
         Dependencies(
             apps = AppRepository(this).apply { opener = SplitScreen::open },
             music = music,
@@ -43,8 +47,8 @@ class LiteDashApp : Application() {
             dashboard = DashboardState(DashboardStore(this)),
             cars = CarRepository(this, BuildConfig.CATALOG_URL),
             updater = Updater(this, BuildConfig.UPDATES_URL, BuildConfig.VERSION_CODE.toLong()),
-            weather = WeatherRepository(this, prefs),
-            trip = TripRepository(this, bus),
+            weather = weather,
+            trip = trip,
             reminders = ReminderRepository(this),
             wheel = WheelKeys(this, prefs),
             stats = Stats(this) { prefs.stats },
@@ -60,6 +64,7 @@ class LiteDashApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashNote.install(this)
         // Antes de leer cualquier ajuste (también el idioma de attachBaseContext): nombres en inglés desde la 1.4.47.
         StorageMigration.run(this)
         // Después de la migración (mueve la carpeta de los autos): mientras Android arma la pantalla.

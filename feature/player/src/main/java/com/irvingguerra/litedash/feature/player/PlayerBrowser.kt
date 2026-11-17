@@ -3,10 +3,13 @@ package com.irvingguerra.litedash.feature.player
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +54,13 @@ import com.irvingguerra.litedash.core.ui.Typography
 import com.irvingguerra.litedash.feature.music.Drive
 import com.irvingguerra.litedash.feature.music.Drives
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 
 /**
  * La biblioteca del reproductor propio, dentro de la música en grande: la memoria USB
@@ -125,7 +134,7 @@ private fun LibraryBrowser(onPicked: () -> Unit, modifier: Modifier) {
         }
     }
     val folderButton: @Composable () -> Unit = {
-        Button(stringResource(R.string.library_pick_folder), { runCatching { pickFolder.launch(null) } })
+        Button(stringResource(R.string.library_pick_folder), { runCatching { pickFolder.launch(null) }.onFailure { android.widget.Toast.makeText(context, R.string.library_no_picker, android.widget.Toast.LENGTH_LONG).show() } })
     }
     if (!permission) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -210,41 +219,88 @@ private fun groupName(group: Group, name: String): String = when {
 
 // --- Radio por internet ---
 
-private enum class RadioTab(val title: Int) { NEARBY(R.string.radio_nearby), FAVORITES(R.string.radio_favorites), SEARCH(R.string.radio_search_tab) }
+// Favoritas primero: es la lista principal y con la que se abre siempre.
+internal enum class RadioTab(val title: Int) { FAVORITES(R.string.radio_favorites), RECENT(R.string.radio_recent), NEARBY(R.string.radio_nearby), EXPLORE(R.string.radio_explore), SEARCH(R.string.radio_search_tab) }
 
 /** Pestaña y búsqueda de la radio: al cerrar y abrir la biblioteca sigue donde estaba. */
-private object RadioBrowserMemory {
-    var tab by mutableStateOf(RadioTab.NEARBY)
+internal object RadioBrowserMemory {
+    var tab by mutableStateOf(RadioTab.FAVORITES)
     var query by mutableStateOf("")
+    /** Explorar: false = países, true = géneros; y lo que se abrió (null = la lista). */
+    var genres by mutableStateOf(false)
+    var opened by mutableStateOf<Radio.Category?>(null)
 }
 
 @Composable
-private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
+internal fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier, showTabs: Boolean = true, resetTab: Boolean = true) {
     val c = LocalColors.current
     val context = LocalContext.current
     val store = remember { PlayerStore(context) }
     val memory = RadioBrowserMemory
     val tab = memory.tab
     val query = memory.query
-    var favorites by remember { mutableStateOf(store.favorites()) }
+    // Cada vez que se abre la radio se empieza en favoritas.
+    LaunchedEffect(Unit) { if (resetTab) memory.tab = RadioTab.FAVORITES }
+    val favorites = RadioFavorites.list(context)
     val here = remember { Radio.here(context) }
     // null = buscando; la lista (y si salió por ubicación o por país).
     // Si los servidores no contestan, la última lista que sí llegó (guardada).
-    val nearby by produceState<List<Station>?>(null) {
+    // Se muestra al momento la última lista guardada (sin internet) y se actualiza cuando la radio ya suena.
+    val nearby by produceState(remember { store.nearbyCache().ifEmpty { null } }) {
+        radioFirst()
         value = withContext(Dispatchers.IO) {
             val fresh = if (here != null) Radio.nearby(context, here) else Radio.country(context)
             if (fresh.isNotEmpty()) { store.setNearbyCache(fresh); fresh } else store.nearbyCache()
         }
+    }
+    // La primera vez, las favoritas vienen llenas con las más escuchadas de Costa Rica.
+    LaunchedEffect(Unit) {
+        if (store.favoritesSeeded) return@LaunchedEffect
+        if (favorites.isNotEmpty()) { store.favoritesSeeded = true; return@LaunchedEffect }
+        radioFirst()
+        val top = withContext(Dispatchers.IO) { Radio.country(context) }.take(SEED_FAVORITES)
+        if (top.isEmpty()) return@LaunchedEffect // sin red: se intenta la próxima vez
+        store.setFavorites(top)
+        RadioFavorites.refresh()
+        store.favoritesSeeded = true
     }
     val found by produceState<List<Station>?>(null, query) {
         value = null
         if (query.length < 2) return@produceState
         value = withContext(Dispatchers.IO) { Radio.byName(context, query.trim()) }
     }
+    // Buscar sin escribir nada: las más populares ahora (país y mundo), por clics de las últimas 24 h.
+    val top by produceState<List<Station>?>(null, tab, query.length < 2) {
+        value = null
+        if (tab != RadioTab.SEARCH || query.length >= 2) return@produceState
+        radioFirst()
+        value = withContext(Dispatchers.IO) {
+            val a = Radio.country(context).take(25)
+            val b = Radio.world(context).take(25)
+            (a + b).distinctBy { it.id }.sortedByDescending { it.clicks }
+        }
+    }
+    val (workingTop, checkingTop) = rememberWorking(top)
+    // Explorar: la lista de países o de géneros y, ya abierto uno, sus estaciones.
+    val categories by produceState<List<Radio.Category>?>(null, tab, memory.genres) {
+        value = null
+        if (tab != RadioTab.EXPLORE) return@produceState
+        value = withContext(Dispatchers.IO) { if (memory.genres) Radio.tags(context) else Radio.countries(context) }
+    }
+    val opened = memory.opened
+    val exploring by produceState<List<Station>?>(null, opened) {
+        value = null
+        if (opened == null) return@produceState
+        value = withContext(Dispatchers.IO) { if (opened.genre) Radio.byTag(context, opened.code) else Radio.byCountry(context, opened.code) }
+    }
+    // Solo las que suenan ahora: se prueban de 10 en 10 y van saliendo en la lista.
+    val (workingNearby, checkingNearby) = rememberWorking(nearby)
+    val (workingFound, checkingFound) = rememberWorking(found)
+    val (workingExploring, checkingExploring) = rememberWorking(exploring)
     val playing = Player.state.current?.key
     fun toggleFavorite(s: Station) {
-        favorites = if (favorites.any { it.id == s.id }) favorites.filter { it.id != s.id } else favorites + s
-        store.setFavorites(favorites)
+        val added = RadioFavorites.toggle(context, s)
+        Toast.makeText(context, context.getString(if (added) R.string.radio_fav_added else R.string.radio_fav_removed, s.name), Toast.LENGTH_SHORT).show()
     }
     fun play(list: List<Station>, s: Station) {
         store.rememberStation(s)
@@ -253,12 +309,38 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
         onPicked()
     }
     Column(modifier) {
-        Segmented(RadioTab.entries.map { it to stringResource(it.title) }, tab, { memory.tab = it })
-        Spacer(Modifier.height(10.dp))
+        if (showTabs) {
+            Segmented(RadioTab.entries.map { it to stringResource(it.title) }, tab, { memory.tab = it })
+            Spacer(Modifier.height(10.dp))
+        }
         val (list, empty) = when (tab) {
-            RadioTab.NEARBY -> nearby to stringResource(if (nearby == null) R.string.radio_loading else R.string.radio_none)
+            RadioTab.NEARBY -> workingNearby to stringResource(if (nearby == null || checkingNearby) R.string.radio_checking else R.string.radio_none)
             RadioTab.FAVORITES -> favorites to stringResource(R.string.radio_no_favorites)
-            RadioTab.SEARCH -> found to stringResource(if (query.length < 2) R.string.radio_search_help else if (found == null) R.string.radio_loading else R.string.radio_none)
+            RadioTab.RECENT -> RadioRecents.list(context) to stringResource(R.string.radio_no_recent)
+            RadioTab.EXPLORE -> workingExploring to stringResource(if (exploring == null) R.string.radio_loading else if (checkingExploring) R.string.radio_checking else R.string.radio_none)
+            RadioTab.SEARCH -> (if (query.length < 2) workingTop else workingFound) to stringResource(if (query.length < 2) R.string.radio_checking else if (found == null) R.string.radio_loading else if (checkingFound) R.string.radio_checking else R.string.radio_none)
+        }
+        val checking = when (tab) { RadioTab.NEARBY -> checkingNearby; RadioTab.EXPLORE -> checkingExploring; RadioTab.SEARCH -> if (query.length < 2) checkingTop else checkingFound; else -> false }
+        if (tab == RadioTab.EXPLORE) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (opened == null) {
+                    Segmented(listOf(false to stringResource(R.string.radio_countries), true to stringResource(R.string.radio_genres)), memory.genres, { memory.genres = it })
+                } else {
+                    Button(stringResource(R.string.radio_back), { memory.opened = null })
+                    Label(opened.name, Typography.subtitle, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (opened == null) {
+                val cats = categories ?: return Label(stringResource(R.string.radio_loading), Typography.body, c.textMuted)
+                if (cats.isEmpty()) return Label(stringResource(R.string.radio_none), Typography.body, c.textMuted)
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(cats, key = { it.code }) { g ->
+                        BrowserRow(Icons.radio, g.name, stringResource(R.string.radio_count, g.count), selected = false) { memory.opened = g }
+                    }
+                }
+                return
+            }
         }
         if (tab == RadioTab.SEARCH) {
             TextInput(query, { memory.query = it }, stringResource(R.string.radio_search_hint), Modifier.fillMaxWidth(), icon = true)
@@ -268,23 +350,70 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
             Label(stringResource(R.string.radio_no_location), Typography.small, c.textMuted)
             Spacer(Modifier.height(6.dp))
         }
+        if (tab == RadioTab.SEARCH && query.length < 2 && !list.isNullOrEmpty()) {
+            Label(stringResource(R.string.radio_popular), Typography.subtitle, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+        }
         if (list.isNullOrEmpty()) return Label(empty, Typography.body, c.textMuted)
+        if (checking) {
+            Label(stringResource(R.string.radio_checking_n, list.size), Typography.small, c.textMuted)
+            Spacer(Modifier.height(6.dp))
+        }
         LazyColumn(Modifier.fillMaxSize()) {
             items(list, key = { it.id }) { s ->
                 val km = if (here != null) s.distanceKm(here.latitude, here.longitude) else null
-                val detail = listOfNotNull(s.subtitle, km?.let { stringResource(R.string.radio_km, it.toInt()) }).joinToString(" · ")
-                BrowserRow(Icons.radio, s.name, detail, selected = s.key == playing, trailing = {
+                val detail = listOfNotNull(s.subtitle, km?.let { stringResource(R.string.radio_km, it.toInt()) }, s.clicks.takeIf { it > 0 }?.let { stringResource(R.string.radio_clicks, it) }).joinToString(" · ")
+                BrowserRow(Icons.radio, s.name, detail, selected = s.key == playing, logo = s.logoUrl, trailing = {
                     val fav = favorites.any { it.id == s.id }
                     IconButton(if (fav) Icons.starFilled else Icons.star, { toggleFavorite(s) }, size = 44.dp, color = if (fav) c.accent else c.textMuted)
-                }) { play(list, s) }
+                }, onLongClick = { toggleFavorite(s) }) { play(list, s) }
             }
         }
     }
 }
 
+/**
+ * De [source] (lo que dio el directorio) deja solo las estaciones que suenan ahora: las prueba de 10 en 10, en orden de
+ * popularidad, y la lista va creciendo; para al juntar [WORKING_MAX]. El segundo valor es si sigue comprobando.
+ */
+/**
+ * Mientras una radio está arrancando, lo demás (listas, sugeridas, pruebas de estaciones) espera hasta [max] para no
+ * quitarle internet: primero tiene que sonar.
+ */
+internal suspend fun radioFirst(max: Long = 8_000) {
+    withTimeoutOrNull(max) {
+        snapshotFlow { Player.state.source == PlayerSource.RADIO && Player.state.buffering }.first { !it }
+    }
+}
+
+@Composable
+internal fun rememberWorking(source: List<Station>?): Pair<List<Station>?, Boolean> {
+    val context = LocalContext.current
+    val state by produceState<Pair<List<Station>?, Boolean>>(null to false, source?.map { it.id }) {
+        if (source == null) { value = null to false; return@produceState }
+        val ok = ArrayList<Station>()
+        value = emptyList<Station>() to true
+        withContext(Dispatchers.IO) {
+            for (batch in source.take(WORKING_SCAN).chunked(10)) {
+                if (ok.size >= WORKING_MAX) break
+                // Probar estaciones abre su audio: mientras la que elegiste arranca, se espera.
+                radioFirst()
+                val checked = coroutineScope { batch.map { st -> async { st to Radio.isAlive(context, st) } }.awaitAll() }
+                ok += checked.filter { it.second }.map { it.first }
+                value = ok.toList() to true
+            }
+        }
+        value = ok.toList() to false
+    }
+    return state
+}
+
+private const val WORKING_SCAN = 100
+private const val WORKING_MAX = 40
+
 /** Un renglón de la lista: ícono, título, detalle y, si lo hay, algo a la derecha (la estrella). */
 @Composable
-private fun BrowserRow(icon: ImageVector, title: String, detail: String, selected: Boolean, trailing: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun BrowserRow(icon: ImageVector, title: String, detail: String, selected: Boolean, logo: String? = null, trailing: (@Composable () -> Unit)? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val c = LocalColors.current
     Row(
         Modifier
@@ -292,11 +421,15 @@ private fun BrowserRow(icon: ImageVector, title: String, detail: String, selecte
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(Radius.inner))
             .background(if (selected) c.surfaceHigh else c.surface)
-            .clickable(onClick = onClick)
+            .combinedClickable(onLongClick = onLongClick, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, if (selected) c.accent else c.textMuted, 22.dp)
+        if (logo != null) {
+            LogoImage(logo, 48.dp, icon)
+        } else {
+            Icon(icon, if (selected) c.accent else c.textMuted, 22.dp)
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Label(title, Typography.body, if (selected) c.accent else c.text, 1)

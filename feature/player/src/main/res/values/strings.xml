@@ -36,4 +36,24 @@
     <string name="library_pick_folder">Elegir carpeta</string>
     <string name="library_pick_folder_help">Si tu música está en la memoria pero no aparece, elige su carpeta: LiteDash la recordará.</string>
     <string name="library_unreadable">Veo la memoria %1$s, pero tu pantalla no deja leer sus canciones. Elige su carpeta y LiteDash la recordará.</string>
+    <string name="library_no_picker">Esta pantalla no trae selector de carpetas. LiteDash busca la memoria USB sola: desconéctala y vuelve a conectarla.</string>
+    <string name="radio_explore">Explorar</string>
+    <string name="radio_countries">Países</string>
+    <string name="radio_genres">Géneros</string>
+    <string name="radio_back">Volver</string>
+    <string name="radio_count">%1$d estaciones</string>
+    <string name="radio_checking">Comprobando qué emisoras suenan…</string>
+    <string name="radio_checking_n">Comprobando… %1$d suenan</string>
+    <string name="radio_fav_added">%1$s: guardada en favoritas</string>
+    <string name="radio_fav_removed">%1$s: quitada de favoritas</string>
+    <string name="radio_popular">Populares ahora</string>
+    <string name="radio_clicks">%1$d sintonías hoy</string>
+    <string name="radio_now_tab">En reproducción</string>
+    <string name="radio_live">EN VIVO</string>
+    <string name="radio_connecting">Conectando…</string>
+    <string name="radio_no_song">En vivo</string>
+    <string name="radio_suggested">Sugeridas</string>
+    <string name="radio_nothing">Elige una emisora de Favoritas, Cerca o Explorar.</string>
+    <string name="radio_recent">Recientes</string>
+    <string name="radio_no_recent">Aquí aparecen las emisoras que vas escuchando.</string>
 </resources>

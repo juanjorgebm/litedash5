@@ -49,7 +49,8 @@ tracking.
    auto esto está en Ajustes → Aplicaciones → Pantalla de inicio, o en un menú
    del fabricante para elegir el launcher.
 
-Requiere Android 6.0 o más nuevo.
+Requiere Android 5.0 (Lollipop) o más nuevo, para que corra también en las
+pantallas de auto viejas.
 
 ## Compilar / Build
 

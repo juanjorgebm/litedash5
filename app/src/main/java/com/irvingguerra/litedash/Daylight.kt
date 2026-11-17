@@ -30,6 +30,7 @@ import kotlin.math.tan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import androidx.core.content.ContextCompat
 
 /**
  * Amanecer y atardecer de hoy con la ecuación de la NOAA (sin internet). Con la
@@ -58,9 +59,9 @@ object Daylight {
 
     @SuppressLint("MissingPermission") // se revisa el permiso justo antes
     fun place(context: Context): Pair<Double, Double> {
-        val granted = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (granted) {
-            val manager = context.getSystemService(LocationManager::class.java)
+            val manager = ContextCompat.getSystemService(context, LocationManager::class.java)!!
             val last = runCatching {
                 manager.getProviders(true).mapNotNull { manager.getLastKnownLocation(it) }.maxByOrNull { it.time }
             }.getOrNull()
@@ -109,7 +110,7 @@ private const val STUCK_SENSOR_MS = 10 * 60_000L
 @Composable
 private fun rememberSensorNight(initial: Boolean): Boolean? {
     val context = LocalContext.current
-    val manager = remember { context.getSystemService(SensorManager::class.java) }
+    val manager = remember { ContextCompat.getSystemService(context, SensorManager::class.java)!! }
     val sensor = remember { manager?.getDefaultSensor(Sensor.TYPE_LIGHT) } ?: return null
     var night by remember { mutableStateOf(initial) }
     var stuck by remember { mutableStateOf(false) }

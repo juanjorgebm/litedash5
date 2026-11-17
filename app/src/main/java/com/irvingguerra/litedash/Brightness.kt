@@ -1,5 +1,6 @@
 package com.irvingguerra.litedash
 
+import android.os.Build
 import com.irvingguerra.litedash.core.ui.Segmented
 import android.app.Activity
 import android.content.Context
@@ -42,7 +43,7 @@ fun ApplyBrightness(prefs: Preferences, night: Boolean, revision: Int) {
     val level = if (night) prefs.nightBrightness else prefs.dayBrightness
     // [revision] sube al volver a LiteDash: así aplica justo después de dar el permiso.
     LaunchedEffect(prefs.brightnessBySun, level, prefs.brightnessAllApps, revision) {
-        val system = prefs.brightnessBySun && prefs.brightnessAllApps && Settings.System.canWrite(activity)
+        val system = prefs.brightnessBySun && prefs.brightnessAllApps && canWriteSettings(activity)
         windowBrightness(activity, level.takeIf { prefs.brightnessBySun && !system })
         withContext(Dispatchers.IO) {
             if (system) setSystemBrightness(activity, prefs, level) else restoreSystemBrightness(activity, prefs)
@@ -66,7 +67,7 @@ private fun setSystemBrightness(context: Context, prefs: Preferences, percent: I
 /** Regresa el brillo del sistema como estaba antes de LiteDash (automático incluido). */
 private fun restoreSystemBrightness(context: Context, prefs: Preferences) {
     val (mode, level) = prefs.brightnessOriginal ?: return
-    if (!Settings.System.canWrite(context)) return
+    if (!canWriteSettings(context)) return
     runCatching {
         val r = context.contentResolver
         Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS, level)
@@ -82,7 +83,12 @@ private fun windowBrightness(activity: Activity, percent: Int?) {
     }
 }
 
+/** En Android 5 el permiso WRITE_SETTINGS se concede al instalar; desde Android 6 se da a mano. */
+private fun canWriteSettings(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.System.canWrite(context)
+
 private fun requestWriteSettings(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
     val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, "package:${context.packageName}".toUri())
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { context.startActivity(intent) }
@@ -102,14 +108,14 @@ fun BrightnessSettings(prefs: Preferences, revision: Int) {
     Level(Icons.sun, stringResource(R.string.brightness_day), prefs.dayBrightness) { prefs.dayBrightness = it }
     Level(Icons.moon, stringResource(R.string.brightness_night), prefs.nightBrightness) { prefs.nightBrightness = it }
     // Se vuelve a revisar al regresar de la pantalla del permiso.
-    val canWrite = remember(revision, prefs.brightnessAllApps) { Settings.System.canWrite(context) }
+    val canWrite = remember(revision, prefs.brightnessAllApps) { canWriteSettings(context) }
     Label(stringResource(R.string.brightness_all_apps_help), Typography.small, c.textMuted)
     Segmented(
         listOf(false to stringResource(R.string.brightness_only_litedash), true to stringResource(R.string.brightness_all_apps)),
         prefs.brightnessAllApps,
         { all ->
             prefs.brightnessAllApps = all
-            if (all && !Settings.System.canWrite(context)) requestWriteSettings(context)
+            if (all && !canWriteSettings(context)) requestWriteSettings(context)
         },
     )
     if (prefs.brightnessAllApps && !canWrite) {

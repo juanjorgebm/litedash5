@@ -4,6 +4,7 @@
 
     <!-- Apps a la vista sin el permiso restringido QUERY_ALL_PACKAGES (el cajón declara las suyas). -->
     <queries>
+        <package android:name="com.nforetek.bt" />
         <!-- Botón de voz: el asistente que tenga la pantalla. -->
         <intent>
             <action android:name="android.intent.action.VOICE_COMMAND" />
@@ -17,10 +18,24 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Ícono de Wi-Fi o datos en la barra (permiso normal, sin pregunta). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Widget Wi‑Fi: ver si está encendido y encenderlo o apagarlo (hasta Android 9). -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- Widget Favoritos: leer los contactos con estrella y llamarlos. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Widgets de otras apps (Musixmatch…): si la pantalla no la concede, Android pide permiso al agregarlos. -->
+    <uses-permission android:name="android.permission.BIND_APPWIDGET" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- Clima y tema por el sol: solo la ubicación aproximada, y solo si lo activas. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Viaje (velocímetro): GPS, solo si agregas la pieza y mientras se ve. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Solo para copiar las apps del carro a Descargas (Investigar app del carro): Android 5 a 9. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Asistente: grabar la pregunta hablada, solo mientras su pantalla está abierta y escuchando. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <!-- Escáner OBD por cable USB (opcional: también va por Bluetooth o Wi-Fi). -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />

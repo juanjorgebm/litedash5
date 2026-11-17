@@ -1,0 +1,60 @@
+name: Publicar versión
+
+# Cada push a la rama del carro compila el APK y lo publica como Release en este repositorio.
+# El actualizador de la app (Ajustes → Acerca de) los lee de ahí. La versión se calcula sola
+# (1.4.<200 + número de corrida>) para que siempre sea más nueva que la anterior; va firmada con
+# la llave fija del repositorio, así que se instala encima sin desinstalar.
+on:
+  push:
+    branches: [claude/project-thread-m27zkl]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+
+      # La descarga de Gradle falla a veces (504 o tiempo agotado en services.gradle.org): se reintenta antes de compilar.
+      - name: Descargar Gradle (con reintentos)
+        run: |
+          for i in $(seq 1 12); do
+            ./gradlew --version --console=plain && exit 0
+            echo "Intento $i falló; se espera 30 s"
+            sleep 30
+          done
+          exit 1
+
+      - name: Versión automática
+        run: |
+          version="1.4.$((200 + GITHUB_RUN_NUMBER))"
+          sed -i "s/^VERSION_NAME=.*/VERSION_NAME=$version/" version.properties
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Compilar APK
+        run: ./gradlew assembleGithubRelease --console=plain
+
+      - name: Armar archivos
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/github/release/app-github-release.apk "out/litedash-$VERSION.apk"
+          (cd out && sha256sum *.apk > SHA256SUMS.txt)
+          git log -1 --pretty=%B > notes.md
+
+      - name: Crear el Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v$VERSION" out/* --target "$GITHUB_SHA" --title "LiteDash $VERSION" --notes-file notes.md

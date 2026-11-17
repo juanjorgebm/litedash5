@@ -40,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import androidx.core.content.ContextCompat
 
 /*
  * "Enviar un reporte" (Ajustes → Sistema → Tu pantalla): el usuario elige con qué hay un problema,
@@ -275,9 +276,9 @@ private fun systemInfo(context: Context, pro: Boolean, layout: String, musicInfo
  */
 @SuppressLint("MissingPermission") // se revisa el permiso antes de leer la última posición
 private fun locationInfo(context: Context): String {
-    val manager = context.getSystemService(LocationManager::class.java) ?: return "Ubicación: sin servicio"
-    val fine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    val coarse = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val manager = ContextCompat.getSystemService(context, LocationManager::class.java) ?: return "Ubicación: sin servicio"
+    val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
     val on = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) manager.isLocationEnabled else manager.isProviderEnabled(LocationManager.GPS_PROVIDER)
     }.getOrDefault(false)
@@ -293,7 +294,7 @@ private fun locationInfo(context: Context): String {
 
 /** La memoria (RAM) de la pantalla en MB. */
 internal fun memoryMb(context: Context): Long {
-    val memory = ActivityManager.MemoryInfo().also { context.getSystemService(ActivityManager::class.java).getMemoryInfo(it) }
+    val memory = ActivityManager.MemoryInfo().also { ContextCompat.getSystemService(context, ActivityManager::class.java)!!.getMemoryInfo(it) }
     return memory.totalMem / (1024 * 1024)
 }
 
@@ -302,7 +303,7 @@ internal fun memoryMb(context: Context): Long {
  * luces o iluminación (cada marca los nombra distinto; solo se leen los que Android deja).
  */
 private fun lightsInfo(context: Context): String {
-    val sensor = context.getSystemService(SensorManager::class.java)?.getDefaultSensor(Sensor.TYPE_LIGHT)
+    val sensor = ContextCompat.getSystemService(context, SensorManager::class.java)?.getDefaultSensor(Sensor.TYPE_LIGHT)
     val names = Regex("illum|headl|lamp|light|dimm|night|backlight|ill_", RegexOption.IGNORE_CASE)
     val found = listOf(
         "system" to Settings.System.CONTENT_URI,

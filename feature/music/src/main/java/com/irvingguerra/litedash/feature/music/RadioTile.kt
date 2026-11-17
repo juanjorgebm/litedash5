@@ -33,8 +33,16 @@ fun RadioTile(repo: MusicRepository, revision: Int, onExpand: () -> Unit, modifi
 private fun StationText(repo: MusicRepository, song: Song?, tall: Boolean) {
     val c = LocalColors.current
     if (song != null) return SongLines(repo, song, tall)
-    Label(stringResource(R.string.radio), if (tall) Typography.title else Typography.subtitle, maxLines = 1)
     val opening = repo.radio.starting
+    // Sin nada sonando y con la radio por internet: la última estación, lista para sonar con play.
+    val pkg = repo.appFor(SourceKind.RADIO)
+    val last = if (opening == null && pkg != null && repo.isOwn(pkg)) repo.ownRadioLast?.invoke() else null
+    if (last != null) {
+        Label(last, if (tall) Typography.title else Typography.subtitle, maxLines = 1)
+        Label(stringResource(R.string.radio_tap_play), Typography.small, c.textMuted, maxLines = 1)
+        return
+    }
+    Label(stringResource(R.string.radio), if (tall) Typography.title else Typography.subtitle, maxLines = 1)
     Label(
         if (opening != null) stringResource(R.string.opening_app, opening) else radioHint(repo),
         Typography.small, if (opening != null) c.accent else c.textMuted, maxLines = 1,

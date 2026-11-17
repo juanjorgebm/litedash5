@@ -30,6 +30,9 @@ internal object PrefKeys {
     const val NIGHT_SOURCE = "night_source"
     const val SCALE = "scale"
     const val CAR_NAME = "car_name"
+    const val ASSISTANT_KEY = "assistant_key"
+    const val ASSISTANT_SPEAK = "assistant_speak"
+    const val ASSISTANT_MODEL = "assistant_model"
     const val CAR_COLOR = "car_color_argb"
     const val CAR_FINISH = "car_finish"
     const val CAR_GLOSS = "car_gloss"
@@ -70,6 +73,7 @@ internal object PrefKeys {
     const val STATS = "anonymous_stats"
     const val HIDE_STATUS_BAR = "hide_status_bar"
     const val INTERNET_RADIO = "internet_radio"
+    const val KEEP_BLUETOOTH = "keep_bluetooth"
     const val TIRES_ON_CAR = "tires_on_car"
     const val TIRES_BANNER = "tires_banner"
     const val CAR_TAP = "car_tap"
@@ -196,7 +200,16 @@ class Preferences(context: Context) {
     /** null = todavía no lo nombra (se muestra "Mi auto"). */
     var carName by string(PrefKeys.CAR_NAME)
 
-    private var _carColor by mutableIntStateOf(p.getInt(PrefKeys.CAR_COLOR, CarColors[0].toArgb()))
+    /** La clave de Gemini del usuario para el asistente (solo se guarda aquí, en la pantalla). */
+    var assistantKey by string(PrefKeys.ASSISTANT_KEY)
+
+    /** Leer en voz alta las respuestas del asistente, si la pantalla tiene voz. */
+    var assistantSpeak by bool(PrefKeys.ASSISTANT_SPEAK, true)
+
+    /** El modelo de Gemini que eligió el usuario; null = automático. */
+    var assistantModel by string(PrefKeys.ASSISTANT_MODEL)
+
+    private var _carColor by mutableIntStateOf(p.getInt(PrefKeys.CAR_COLOR, CarColors[1].toArgb())) // blanco, como el Okavango
     var carColor: Color
         get() = Color(_carColor)
         set(v) { _carColor = v.toArgb(); p.edit { putInt(PrefKeys.CAR_COLOR, _carColor) } }
@@ -290,8 +303,11 @@ class Preferences(context: Context) {
     /** En pantalla dividida, al lado del mapa va la carretera (si no, el auto 3D). */
     var splitRoad by bool(PrefKeys.SPLIT_ROAD, false)
 
-    /** Radio por internet con las estaciones de cerca (apagada de fábrica). */
-    var internetRadio by bool(PrefKeys.INTERNET_RADIO, false)
+    /** Radio por internet con las estaciones de cerca (encendida de fábrica en esta versión; quien la apagó la conserva apagada). */
+    var internetRadio by bool(PrefKeys.INTERNET_RADIO, true)
+
+    /** Mantener activo el Bluetooth de la pantalla del carro y que reconecte el celular al encender. */
+    var keepBluetooth by bool(PrefKeys.KEEP_BLUETOOTH, false)
 
     /** Guardar un resumen de cada viaje con el OBD conectado (apagado de fábrica). */
     var tripLog by bool(PrefKeys.TRIP_LOG, false)

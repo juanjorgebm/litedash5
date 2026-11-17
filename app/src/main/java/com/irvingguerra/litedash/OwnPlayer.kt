@@ -29,6 +29,7 @@ object OwnPlayer {
         music.ownRadio = prefs.internetRadio
         music.ownSourceNow = { Player.state.source?.toKind() }
         music.ownPlay = { kind, done -> play(context, kind, done) }
+        music.ownRadioLast = { PlayerStore(context).lastStation()?.title }
         music.ownPause = {
             generation++
             if (Player.state.source == PlayerSource.USB && (Player.state.playing || Player.state.buffering)) Player.pause()

@@ -24,7 +24,8 @@ fun MusicTile(repo: MusicRepository, revision: Int, onExpand: () -> Unit, modifi
         repo, revision, onExpand, modifier, song, Icons.music, stringResource(R.string.music), stringResource(R.string.music_explain),
         text = { tall -> SongText(repo, song, tall) },
         // Cargando se pinta como pausa: tocarlo cancela la carga.
-        controls = { m, compact -> Controls(repo, song?.playing == true, m, loading = song?.buffering == true, compact = compact) },
+        // Música del carro sin título: siempre anterior y siguiente, aunque la pieza sea angosta.
+        controls = { m, compact -> Controls(repo, song?.playing == true, m, loading = song?.buffering == true, compact = compact && !repo.carMode, size = 48.dp) },
     )
 }
 
@@ -37,8 +38,9 @@ private fun SongText(repo: MusicRepository, song: Song?, tall: Boolean) {
         Label(stringResource(R.string.opening_app, opening), Typography.subtitle, c.accent, maxLines = 1)
         Label(stringResource(R.string.opening_wait), Typography.small, c.textMuted, maxLines = 1)
     } else if (song == null) {
-        Label(stringResource(R.string.nothing_playing), if (tall) Typography.title else Typography.subtitle, maxLines = 1)
-        Label(idleHint(repo), Typography.small, c.textMuted, maxLines = 1)
+        val car = repo.carMode
+        Label(stringResource(if (car) R.string.car_player else R.string.nothing_playing), if (tall) Typography.title else Typography.subtitle, maxLines = 1)
+        Label(if (car) stringResource(R.string.car_player_help) else idleHint(repo), Typography.small, c.textMuted, maxLines = 1)
     } else {
         SongLines(repo, song, tall)
         if (song.durationMs > 0) {

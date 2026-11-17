@@ -55,8 +55,9 @@ class DashboardState(private val store: DashboardStore) {
         "Cuadrícula: ${grid?.key ?: "-"} · guardadas: ${store.grids().sortedBy { it.key }.joinToString { "${it.key}${if (store.savedAt(it) == 0L) "" else "*"}" }.ifEmpty { "ninguna" }}"
 
     fun change(newTiles: List<Tile>) {
-        tiles = newTiles
-        grid?.let { store.save(it, newTiles) }
+        val compact = newTiles.compactPages()
+        tiles = compact
+        grid?.let { store.save(it, compact) }
     }
 
     /** Cambia las que se ven ([shown]); las escondidas se quedan si nada quedó encima de ellas. */
@@ -87,9 +88,10 @@ class DashboardState(private val store: DashboardStore) {
     fun add(type: String, size: Pair<Int, Int>, limits: SizeLimits, data: String = ""): Boolean {
         val c = grid ?: return false
         for ((width, height) in listOf(size, limits.minWidth to limits.minHeight)) {
-            val spot = shown.freeSpot(width, height, c) ?: continue
+            // Si no cabe en ninguna página, se abre una nueva.
+            val (col, row, page) = shown.freeSpotAnyPage(width, height, c) ?: continue
             val id = "$type-${System.currentTimeMillis().toString(36)}"
-            changeShown(shown + Tile(id, type, spot.first, spot.second, width, height, data))
+            changeShown(shown + Tile(id, type, col, row, width, height, data, page = page))
             return true
         }
         return false

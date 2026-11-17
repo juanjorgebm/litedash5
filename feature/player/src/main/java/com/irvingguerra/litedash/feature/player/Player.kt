@@ -83,9 +83,12 @@ object Player {
     private val main = Handler(Looper.getMainLooper())
     // Leer carátulas y abrir archivos fuera del hilo principal, de uno en uno.
     private val io = Executors.newSingleThreadExecutor { Thread(it, "player-io") }
+    /** Logos y carátulas aparte: antes iban en la misma fila que abrir la radio y la hacían esperar. */
+    private val artIo = Executors.newSingleThreadExecutor { Thread(it, "player-art").apply { priority = Thread.MIN_PRIORITY } }
     private var player: MediaPlayer? = null
     /** Radio AAC en vivo (lo que MediaPlayer no sabe arrancar); null si suena por [player]. */
     private var aac: AacStream? = null
+    private var proxy: StreamProxy? = null
     private var session: MediaSession? = null
     private var focus: AudioFocusRequest? = null
     private var ducked = false
@@ -145,6 +148,8 @@ object Player {
         player = null
         aac?.stop()
         aac = null
+        proxy?.close()
+        proxy = null
     }
 
     fun toggle() = if (state.playing) pause() else resume()
@@ -170,6 +175,13 @@ object Player {
         publishState()
     }
 
+    /** Dónde va de verdad la canción de la USB (lo que dice el reproductor, sin calcularlo con el reloj); null si no aplica. */
+    fun position(): Long? {
+        val p = player ?: return null
+        if (state.current !is Track || state.buffering) return null
+        return runCatching { p.currentPosition.toLong() }.getOrNull()
+    }
+
     /** Para del todo: suelta el audio, la sesión y el aviso. */
     fun stop() {
         requests++
@@ -186,13 +198,16 @@ object Player {
 
     private fun start(item: Playable) {
         val myLoad = ++load
+        if (item is Station) PlayerStore(app).rememberStation(item)
         releaseAudio()
         if (item is Track) watchUsb() else unwatchUsb()
         publishMetadata(item, null)
         PlaybackService.update(app)
         // Si en un rato no suena, se avisa (la radio puede no contestar nunca).
         main.postDelayed({ if (myLoad == load && state.buffering) fail(app.getString(R.string.player_timeout)) }, LOAD_TIMEOUT_MS)
-        io.execute { val art = artworkOf(item); main.post { if (myLoad == load) publishMetadata(item, art) } }
+        // El logo de la estación se baja cuando ya suena (o a los 6 s): primero el audio.
+        val fetchArt = Runnable { if (myLoad == load) artIo.execute { val art = artworkOf(item); main.post { if (myLoad == load) publishMetadata(item, art) } } }
+        if (item is Track) fetchArt.run() else { artPending = fetchArt; main.postDelayed({ if (artPending === fetchArt) { artPending = null; fetchArt.run() } }, 6_000) }
         if (item is Station && item.isAac) {
             startAac(item, myLoad)
             return
@@ -239,7 +254,15 @@ object Player {
         player = p
         io.execute {
             try {
-                p.setDataSource(app, item.uri)
+                val remote = item.uri.toString()
+                if (item is Station && StreamProxy.needed(remote)) {
+                    // Android 5 a 7.1: sin los certificados de Let's Encrypt, la radio pasa por un puente local.
+                    val bridge = StreamProxy(app, remote).also { it.start() }
+                    main.post { if (myLoad == load) proxy = bridge else bridge.close() }
+                    p.setDataSource(bridge.localUrl)
+                } else {
+                    p.setDataSource(app, item.uri)
+                }
                 p.prepareAsync()
             } catch (x: Exception) {
                 main.post { if (myLoad == load) { Log.w("LiteDash", "MediaPlayer: ${x.message}"); fail(app.getString(R.string.player_cannot_play)) } }
@@ -256,7 +279,11 @@ object Player {
         PlaybackService.update(app)
     }
 
+    /** El logo que espera a que la radio empiece a sonar. */
+    private var artPending: Runnable? = null
+
     private fun update(playing: Boolean = state.playing, buffering: Boolean = state.buffering) {
+        if (playing && !buffering) artPending?.let { artPending = null; it.run() }
         state = PlayerState(state.source, state.queue, state.index, playing, buffering, null)
         publishState()
         PlaybackService.update(app)
@@ -283,7 +310,29 @@ object Player {
 
     internal val sessionToken get() = session?.sessionToken
 
+    /** La carátula que se publicó para lo que suena (para no perderla al cambiar solo los datos). */
+    private var shownArt: Bitmap? = null
+
+    /**
+     * Cambia los datos de una canción de la cola (los reales, buscados en internet por la app) sin cortarla: título,
+     * artista, álbum y, si la hay, la carátula. Llamar en el hilo principal.
+     */
+    fun retag(key: String, title: String, artist: String, album: String, art: Bitmap?) {
+        val s = state
+        var changed = false
+        val queue = s.queue.map {
+            if (it is Track && it.key == key && (it.title != title || it.artist != artist || it.album != album)) {
+                changed = true
+                it.copy(title = title, artist = artist, album = album)
+            } else it
+        }
+        if (changed) state = PlayerState(s.source, queue, s.index, s.playing, s.buffering, s.error)
+        val now = state.current ?: return
+        if (now.key == key && (changed || art != null)) publishMetadata(now, art ?: shownArt)
+    }
+
     private fun publishMetadata(item: Playable, art: Bitmap?) {
+        shownArt = art
         val duration = (item as? Track)?.durationMs ?: -1L
         session?.setMetadata(
             MediaMetadata.Builder()
@@ -351,7 +400,7 @@ object Player {
     }
 
     private fun requestFocus(): Boolean {
-        val audio = app.getSystemService(AudioManager::class.java) ?: return true
+        val audio = ContextCompat.getSystemService(app, AudioManager::class.java) ?: return true
         val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val request = focus ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
@@ -366,7 +415,7 @@ object Player {
     }
 
     private fun abandonFocus() {
-        val audio = app.getSystemService(AudioManager::class.java) ?: return
+        val audio = ContextCompat.getSystemService(app, AudioManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) focus?.let { audio.abandonAudioFocusRequest(it) }
         else @Suppress("DEPRECATION") audio.abandonAudioFocus(focusListener)
     }

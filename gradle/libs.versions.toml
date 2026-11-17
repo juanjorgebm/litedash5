@@ -1,9 +1,11 @@
 [versions]
 agp = "9.5.0"
 kotlin = "2.4.21"
-composeBom = "2026.09.00"
-activityCompose = "1.13.0"
-core = "1.18.0"
+# Android 5 (API 21): las versiones más nuevas de AndroidX ya piden minSdk 23.
+# Compose 1.8.x, activity 1.10.x y core 1.16.x son las últimas que corren en Lollipop.
+composeBom = "2025.07.00"
+activityCompose = "1.10.1"
+core = "1.16.0"
 profileinstaller = "1.4.1"
 benchmark = "1.5.0"
 uiautomator = "2.4.0"

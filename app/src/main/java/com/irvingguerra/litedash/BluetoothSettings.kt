@@ -48,8 +48,9 @@ import com.irvingguerra.litedash.feature.music.SourceKind
 fun BluetoothSettings(d: Dependencies) {
     val context = LocalContext.current
     val c = LocalColors.current
-    val adapter = remember { context.getSystemService(BluetoothManager::class.java)?.adapter }
+    val adapter = remember { ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter }
 
+    KeepBluetoothRow(d)
     // Sin el Bluetooth de Android (o sin el perfil de música AVRCP): vincula desde su propia app.
     if (adapter == null || !d.music.bluetoothBuiltIn) {
         Label(stringResource(R.string.bt_own_pair), Typography.body, c.textMuted)
@@ -174,3 +175,15 @@ private fun bond(dev: BluetoothDevice) = runCatching { dev.createBond() }
 
 /** Quitar el vínculo guardado: `removeBond` no es público, va por reflexión. */
 private fun forget(dev: BluetoothDevice) = runCatching { dev.javaClass.getMethod("removeBond").invoke(dev) }
+
+/** Opción: mantener el Bluetooth del carro activo y reconectando solo al encender. */
+@Composable
+private fun KeepBluetoothRow(d: Dependencies) {
+    val context = LocalContext.current
+    var result by remember { mutableStateOf<String?>(null) }
+    com.irvingguerra.litedash.core.ui.SwitchRow(stringResource(R.string.bt_keep), d.prefs.keepBluetooth, { d.prefs.keepBluetooth = it }, stringResource(R.string.bt_keep_help))
+    if (d.prefs.keepBluetooth) {
+        Button(stringResource(R.string.bt_keep_now), { CarBluetoothKeeper.ensure(context) { result = it } })
+        result?.let { Label(stringResource(R.string.bt_keep_result, it), Typography.label, LocalColors.current.textMuted) }
+    }
+}
