@@ -109,7 +109,7 @@ object Library {
     /** Todas las canciones de [drive], ordenadas por carpeta y archivo (como se ven en la memoria). */
     private fun tracks(context: Context, drive: Drive): List<Track> {
         val found = if (drive.id.startsWith(FOLDER)) folderTracks(context, drive.id.removePrefix(FOLDER).toUri())
-        else indexed(context, drive).ifEmpty { drive.path?.let { scan(File(it)) }.orEmpty() }
+        else merged(indexed(context, drive), drive.path?.let { scan(File(it)) }.orEmpty())
         val fix = overrides
         return found.map { t -> fix?.let { f -> runCatching { f(t) }.getOrNull() } ?: t }.sortedWith(compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.folder }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.file })
     }
@@ -130,6 +130,19 @@ object Library {
             }
             out
         }) { child, name, folder -> Track(DocumentsContract.buildDocumentUriUsingTree(tree, child), name.substringBeforeLast('.'), "", "", folder, 0, name) }
+    }
+
+    /**
+     * El índice de Android en las pantallas de carro suele quedarse con unas pocas canciones de la USB: se recorre
+     * también la memoria y se juntan. De cada archivo se usan los datos del índice si los tiene (artista, álbum y
+     * duración), si no los del recorrido.
+     */
+    private fun merged(indexed: List<Track>, scanned: List<Track>): List<Track> {
+        if (scanned.isEmpty()) return indexed
+        val byKey = indexed.associateBy { it.key }
+        val seen = HashSet<String>()
+        val out = scanned.map { t -> (byKey[t.key] ?: t).also { seen += it.key } }
+        return out + indexed.filter { it.key !in seen }
     }
 
     /** Las de MediaStore (rápido, con artista, álbum y duración). */

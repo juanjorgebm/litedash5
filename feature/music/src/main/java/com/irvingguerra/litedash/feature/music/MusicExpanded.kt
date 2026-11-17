@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
 import com.irvingguerra.litedash.core.ui.LocalColors
@@ -76,7 +77,9 @@ fun MusicExpanded(
 @Composable
 private fun Details(repo: MusicRepository, song: Song?, modifier: Modifier) {
     val opening = repo.starting
-    Column(modifier) {
+    BoxWithConstraints(modifier, contentAlignment = Alignment.CenterStart) {
+    val short = maxHeight < 330.dp
+    Column(Modifier.fillMaxWidth()) {
         val title = when {
             song != null -> song.title
             opening != null -> stringResource(R.string.opening_app, opening)
@@ -92,6 +95,23 @@ private fun Details(repo: MusicRepository, song: Song?, modifier: Modifier) {
             repo.carMode -> stringResource(R.string.car_player_help)
             repo.usbDrive != null -> stringResource(R.string.usb_drive_in, repo.usbDrive.orEmpty())
             else -> stringResource(R.string.resume_explain)
+        }
+        // A media pantalla no cabe todo uno debajo de otro (los botones quedaban fuera): título y artista en una
+        // línea, la barra, y los botones entre los dos tiempos.
+        if (short) {
+            val c = LocalColors.current
+            Label(title, Typography.title.copy(fontSize = 24.sp), c.text, 1)
+            Label(subtitle, Typography.subtitle, if (error != null) c.danger else c.textMuted, 1)
+            Spacer(Modifier.height(8.dp))
+            val timed = song != null && song.durationMs > 0
+            if (timed) TimeBar(repo, song!!, times = false)
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { if (timed) TimeLabel(song!!, start = true) }
+                Controls(repo, song?.playing == true, loading = song?.buffering == true, size = 56.dp, playSize = 68.dp, gap = 14.dp)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { if (timed) TimeLabel(song!!, start = false) }
+            }
+            return@BoxWithConstraints
         }
         BigTitle(title, subtitle, error != null)
         if (song != null && song.durationMs > 0) {
@@ -109,6 +129,14 @@ private fun Details(repo: MusicRepository, song: Song?, modifier: Modifier) {
             }
         }
     }
+    }
+}
+
+/** El tiempo que va ([start]) o el total, junto a los botones en la vista corta. */
+@Composable
+private fun TimeLabel(song: Song, start: Boolean) {
+    val pos by rememberPosition(song)
+    Label(formatTime(if (start) pos else song.durationMs), Typography.small, LocalColors.current.textMuted, 1)
 }
 
 /** Botón propio de la app con su ícono (se pinta del color del texto: suelen ser monocromos). */
@@ -126,7 +154,7 @@ private fun ActionButton(a: MediaAction, onClick: () -> Unit) {
 
 /** Barra de avance que se toca o arrastra para adelantar (si la app lo permite). */
 @Composable
-private fun TimeBar(repo: MusicRepository, song: Song) {
+private fun TimeBar(repo: MusicRepository, song: Song, times: Boolean = true) {
     val c = LocalColors.current
     val pos by rememberPosition(song)
     var dragFraction by remember { mutableStateOf<Float?>(null) }
@@ -164,7 +192,7 @@ private fun TimeBar(repo: MusicRepository, song: Song) {
             Box(Modifier.offset(maxWidth * fraction - 8.dp).size(16.dp).clip(CircleShape).background(c.primary))
         }
     }
-    Row(Modifier.fillMaxWidth()) {
+    if (times) Row(Modifier.fillMaxWidth()) {
         Label(formatTime(if (dragFraction != null) (fraction * duration).toLong() else pos), Typography.small, c.textMuted, 1)
         Spacer(Modifier.weight(1f))
         Label(formatTime(duration), Typography.small, c.textMuted, 1)
