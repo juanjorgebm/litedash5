@@ -50,7 +50,10 @@ public class RecorderService extends Service implements SensorEventListener {
             K_SPEED = "speed_kmh", K_STOP_SPEED = "stop_kmh", K_MAX_INTERNAL = "max_internal_gb", K_OPEN_ON_ACC = "open_on_acc";
     static final float DEF_START = 0.10f, DEF_STOP = 0.07f, DEF_IMPACT = 3.0f;
     /** Segundos seguidos por encima/debajo del umbral para decidir "en marcha" o "detenido". */
-    static final long START_MS = 3000, STOP_MS = 2000;
+    static final long START_MS = 3000, STOP_MS = 800;
+    /** Frenazo: si al bajar de esta velocidad viene una frenada fuerte, se suelta la cámara enseguida
+     *  (puede entrar la reversa). Se mide en km/h y en cuántos km/h baja por segundo. */
+    static final float REVERSE_WATCH_KMH = 12f, HARD_DECEL_KMH_S = 7f;
     static final float DEF_STOP_KMH = 1f;
     static final long SEGMENT_MS = 3 * 60 * 1000;
     static final long CLIP_MS = 60 * 1000;
@@ -106,6 +109,8 @@ public class RecorderService extends Service implements SensorEventListener {
     private final long[] times = new long[400];
     private int magPos, magCount;
     private long aboveSince, belowSince;
+    private float prevSpeed = -1;
+    private long prevSpeedAt;
     private final float[] hist10 = new float[20];
     private int histPos;
 
@@ -239,7 +244,21 @@ public class RecorderService extends Service implements SensorEventListener {
             lat = l.getLatitude();
             lon = l.getLongitude();
             speedKmh = l.hasSpeed() ? l.getSpeed() * 3.6f : -1;
-            fixAt = SystemClock.elapsedRealtime();
+            long t = SystemClock.elapsedRealtime();
+            // Frenazo hasta casi parar: soltar la cámara ya, sin esperar el retardo normal, por si el
+            // conductor mete la reversa (el 360 necesita la cámara 0 y si la tenemos, se bloquea).
+            if (recording && speedKmh >= 0 && prevSpeed >= 0 && prevSpeedAt != 0) {
+                float dt = (t - prevSpeedAt) / 1000f;
+                if (dt > 0.2f) {
+                    float decel = (prevSpeed - speedKmh) / dt;
+                    if (speedKmh <= REVERSE_WATCH_KMH && (decel >= HARD_DECEL_KMH_S || speedKmh <= stopKmh)) {
+                        fastStopForReverse();
+                    }
+                }
+            }
+            prevSpeed = speedKmh;
+            prevSpeedAt = t;
+            fixAt = t;
             if (tracker != null) tracker.onFix(l, accOn, moving);
         }
         public void onStatusChanged(String p, int st, Bundle b) { }
@@ -322,6 +341,19 @@ public class RecorderService extends Service implements SensorEventListener {
             cam.postDelayed(this, 500);
         }
     };
+
+    /**
+     * Frena y suelta la cámara de inmediato (sin el retardo de STOP_MS) para que, si el conductor mete
+     * la reversa justo después de frenar, el 360 pueda tomar la cámara 0 y no se bloqueen las cámaras.
+     */
+    private void fastStopForReverse() {
+        if (!recording) return;
+        moving = false;
+        aboveSince = 0;
+        belowSince = 0;
+        event("Frenada: suelto la cámara por si entra la reversa");
+        cam.post(new Runnable() { public void run() { stopRecording("frenada: cámara libre para la reversa"); } });
+    }
 
     private void updateMotion(long now) {
         float v;
