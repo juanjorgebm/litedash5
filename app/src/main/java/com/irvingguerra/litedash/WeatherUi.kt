@@ -58,11 +58,10 @@ fun textOf(sky: Sky) = when (sky) {
 @Composable
 fun rememberEnableWeather(repo: WeatherRepository): () -> Unit {
     val scope = rememberCoroutineScope()
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) {
-            repo.enable()
-            scope.launch { repo.refreshIfStale(force = true) }
-        }
+    // Sin el permiso también se prende: usa Palmares, Alajuela.
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+        repo.enable()
+        scope.launch { repo.refreshIfStale(force = true) }
     }
     return { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
 }

@@ -28,6 +28,7 @@
     <string name="templates">Layouts</string>
     <string name="templates_help">Pick a starting point. Then move and resize anything you like.</string>
     <string name="template_center">Car in the middle</string>
+    <string name="template_okavango">Okavango</string>
     <string name="template_side">Car on the side</string>
     <string name="template_vertical">Portrait</string>
     <string name="template_speed">Speedometer only</string>
@@ -434,6 +435,24 @@
     <string name="tile_music_help">What\'s playing, with controls; tap to open it big</string>
     <string name="tile_clock_help">Time, date and weather</string>
     <string name="tile_phone_help">Opens the dialer</string>
+    <string name="tile_wifi">Wi‑Fi</string>
+    <string name="tile_wifi_help">Turns Wi‑Fi on and off with one tap</string>
+    <string name="tile_bluetooth">Bluetooth</string>
+    <string name="tile_bluetooth_help">Turns Bluetooth on and off with one tap</string>
+    <string name="toggle_on">On</string>
+    <string name="tile_favorites">Favorites</string>
+    <string name="tile_favorites_help">Your starred contacts; one tap calls</string>
+    <string name="tile_widget">Android widget</string>
+    <string name="tile_widget_help">A widget from another app (e.g. Musixmatch)</string>
+    <string name="favorites_allow">Allow contacts</string>
+    <string name="favorites_empty">No starred contacts. Star them on your phone and sync contacts over Bluetooth.</string>
+    <string name="my_okavango">My Okavango</string>
+    <string name="weather_unknown">No weather</string>
+    <string name="widget_bind_failed">Could not add the widget: this screen does not allow it.</string>
+    <string name="pick_widget">Pick a widget</string>
+    <string name="pick_widget_empty">No widgets installed. Install the app (e.g. Musixmatch) and come back.</string>
+    <string name="widget_remove_hint">Long-press to remove it</string>
+    <string name="toggle_off">Off</string>
     <string name="logo_intro_help">When LiteDash opens, your image (like your brand\'s logo) shows for a few seconds. It\'s separate from the image widgets.</string>
     <string name="intro_no_image">Without an image, the LiteDash logo shows.</string>
     <string name="unit_kml">km/L</string>
@@ -705,4 +724,8 @@
     <string name="pro_taken">This code is already used on another screen. Ask to have it released.</string>
     <string name="pro_offline">No connection. Try again.</string>
     <string name="pro_expired">Connect to the internet to keep the developer code</string>
+    <string name="rail_projection">Android Auto</string>
+    <string name="rail_settings">Settings</string>
+    <string name="toggle_blocked">This screen does not let LiteDash switch this on or off. Use the car settings.</string>
+    <string name="toggle_phone_connected">Phone connected</string>
 </resources>

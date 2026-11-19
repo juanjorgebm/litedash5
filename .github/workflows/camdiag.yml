@@ -1,0 +1,35 @@
+name: Diagnóstico de cámaras
+
+# APK pequeño e independiente para ver cómo expone las cámaras la pantalla del Okavango.
+on:
+  push:
+    paths: ["tools/camdiag/**", ".github/workflows/camdiag.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Compilar
+        run: tools/camdiag/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-camaras
+          path: tools/camdiag/build/diagnostico-camaras.apk
+      - name: Publicar en la versión "diagnostico-camaras"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view diagnostico-camaras >/dev/null 2>&1 || \
+            gh release create diagnostico-camaras --prerelease --target "$GITHUB_SHA" \
+              --title "Diagnóstico de cámaras" --notes "APK de diagnóstico de cámaras para el Okavango (Android 5)."
+          gh release upload diagnostico-camaras tools/camdiag/build/diagnostico-camaras.apk --clobber

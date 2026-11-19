@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.irvingguerra.litedash.core.ui.Button
+import com.irvingguerra.litedash.core.ui.Icon
+import com.irvingguerra.litedash.core.ui.Card
 import com.irvingguerra.litedash.core.ui.IconButton
 import com.irvingguerra.litedash.core.ui.Icons
 import com.irvingguerra.litedash.core.ui.Label
@@ -74,6 +76,7 @@ import com.irvingguerra.litedash.core.vehicle.Signal
 import com.irvingguerra.litedash.core.vehicle.VehicleBus
 import com.irvingguerra.litedash.feature.apps.App
 import com.irvingguerra.litedash.feature.apps.AppIcon
+import com.irvingguerra.litedash.feature.music.SourceKind
 import com.irvingguerra.litedash.feature.apps.AppRepository
 import com.irvingguerra.litedash.feature.apps.rememberApps
 import com.irvingguerra.litedash.feature.car.CarPackage
@@ -128,6 +131,8 @@ sealed interface Panel {
     data class CustomizeMap(val tileId: String) : Panel
     /** Ajustes abiertos en Llantas (desde la vista de llantas o la pieza sin configurar). */
     data object TiresSettings : Panel
+    /** Elegir un widget de otra app de Android. */
+    data object PickWidget : Panel
 }
 
 class Dependencies(
@@ -284,9 +289,13 @@ fun TileContent(d: Dependencies, p: Tile, apps: List<App>, car: CarPackage?, rev
                 onExpand = if (p.fillsHalf(d.dashboard.grid)) null else expand,
             )
         }
+        TileTypes.FAVORITES -> FavoritesTile()
+        TileTypes.WIDGET -> WidgetTile(p.data)
         TileTypes.PHONE -> ShortcutTile(Icons.phone, stringResource(R.string.tile_phone), null) {
             openDialer(context)
         }
+        TileTypes.WIFI -> WifiToggleTile()
+        TileTypes.BLUETOOTH -> BluetoothToggleTile()
         TileTypes.APP -> {
             val app = d.apps.find(apps, p.data)
             AppTile(d.apps, app) {
@@ -508,15 +517,23 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
           }
           val favorites = remember(apps, d.prefs.dock, d.prefs.musicApp) { dockFavorites(d, apps) }
           Row(Modifier.fillMaxSize()) {
+            val railContext = LocalContext.current
             if (rail) Rail(
-                repo = d.apps,
-                favorites = favorites,
+                active = expanded,
+                onHome = { backToDashboard() },
+                onProjection = {
+                    val projection = projectionApp(apps)
+                    if (projection != null) d.apps.open(railContext, projection) else panel = Panel.Drawer
+                },
+                onMusic = { expanded = Expanded.MUSIC },
+                onRadio = { if (d.music.sourceApps[SourceKind.RADIO] != null) d.music.openRadioApp() else expanded = Expanded.RADIO },
+                onPhone = { openDialer(railContext) },
                 onApps = { panel = Panel.Drawer },
                 onSettings = { panel = Panel.Settings },
             )
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 // Si ya hay un reloj en el tablero (o en la barra lateral), la barra no repite la hora.
-                val showTime = !rail && d.dashboard.tiles.none { it.type == TileTypes.CLOCK }
+                val showTime = true
                 val barHidden = !editing && !showTime
                 TopBar(
                     editing = editing,
@@ -635,9 +652,11 @@ fun Home(d: Dependencies, revision: Int, homePressed: Int) {
                 close = { panel = null },
                 onPickApp = { panel = Panel.PickApp(null) },
                 onPickGauge = { panel = Panel.PickGauge(null) },
+                onPickWidget = { panel = Panel.PickWidget },
             )
             is Panel.PickApp -> PickAppPanel(d, apps, p.tileId, close = { panel = null })
             is Panel.PickGauge -> PickGaugePanel(d, p.tileId, close = { panel = null })
+            Panel.PickWidget -> PickWidgetPanel(d, close = { panel = null })
             is Panel.CustomizeGauge -> CustomizeGaugePanel(d, p.tileId, close = { panel = null }, onPickSignal = { panel = Panel.PickGauge(p.tileId) })
             is Panel.CustomizeImage -> CustomizeImagePanel(d, p.tileId, close = { panel = null })
             is Panel.CustomizeMap -> CustomizeMapPanel(d, p.tileId, close = { panel = null })
@@ -742,15 +761,13 @@ private fun TopBar(editing: Boolean, showTime: Boolean, driverName: String?, wea
             Button(stringResource(R.string.done), onFinish, primary = true)
         } else {
             val clock = rememberClock()
-            // Con nombre: el saludo primero y la fecha después, más tenue.
+            // Fecha a la izquierda, hora grande al centro e indicadores de conexión a la derecha.
             val hello = greeting(driverName)
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (hello != null) Label(hello, Typography.subtitle, maxLines = 1)
-                Label(clock.date, Typography.body, c.textMuted, maxLines = 1)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                Label(if (hello != null) "$hello · ${clock.date}" else clock.date, Typography.body, c.textMuted, maxLines = 1)
             }
-            WeatherChip(weather)
-            StatusIcons()
-            Label(clock.full, Typography.subtitle, maxLines = 1)
+            Label(clock.full, Typography.title, maxLines = 1)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { StatusIcons() }
         }
     }
 }
@@ -808,46 +825,55 @@ private fun AppShortcut(repo: AppRepository, app: App, box: Dp, icon: Dp) {
 }
 
 /**
- * Barra lateral (pantallas acostadas): hora, clima y estado arriba; todas las apps y tus
- * favoritas (las que quepan); abajo volumen, voz y Ajustes.
+ * Barra lateral (pantallas acostadas): accesos grandes a Inicio, Android Auto, Música, Radio,
+ * Teléfono, Apps y Ajustes, con el activo en ámbar.
  */
 @Composable
 private fun Rail(
-    repo: AppRepository,
-    favorites: List<App>,
+    active: Expanded?,
+    onHome: () -> Unit,
+    onProjection: () -> Unit,
+    onMusic: () -> Unit,
+    onRadio: () -> Unit,
+    onPhone: () -> Unit,
     onApps: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val c = LocalColors.current
-    val context = LocalContext.current
     val small = isSmallScreen()
-    val button = if (small) 52.dp else 56.dp
-    val icon = if (small) 40.dp else 44.dp
-    val clock = rememberClock()
+    Card(Modifier.fillMaxHeight().width(if (small) 92.dp else 104.dp).padding(start = 10.dp, top = 10.dp, bottom = 10.dp)) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            RailButton(Icons.home, stringResource(R.string.home), active == null, onHome, Modifier.weight(1f))
+            RailButton(Icons.phoneCar, stringResource(R.string.rail_projection), false, onProjection, Modifier.weight(1f))
+            RailButton(Icons.music, stringResource(R.string.tile_music), active == Expanded.MUSIC, onMusic, Modifier.weight(1f))
+            RailButton(Icons.radio, stringResource(R.string.tile_radio), active == Expanded.RADIO, onRadio, Modifier.weight(1f))
+            RailButton(Icons.phone, stringResource(R.string.tile_phone), false, onPhone, Modifier.weight(1f))
+            RailButton(Icons.apps, stringResource(R.string.apps), false, onApps, Modifier.weight(1f))
+            RailButton(Icons.settings, stringResource(R.string.rail_settings), false, onSettings, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun RailButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val c = LocalColors.current
+    val shape = RoundedCornerShape(Radius.inner)
     Column(
-        Modifier.fillMaxHeight().width(if (small) 76.dp else 88.dp).padding(vertical = 10.dp),
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp)
+            .clip(shape)
+            .background(if (on) c.accent else Color.Transparent)
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
-        // Angosta: a.m./p.m. en chico junto a la hora (en otra línea le quitaría lugar a las apps).
-        Row(verticalAlignment = Alignment.Bottom) {
-            Label(clock.time, Typography.subtitle, maxLines = 1)
-            if (clock.marker != null) Label(clock.marker, Typography.small.copy(fontSize = 11.sp), c.textMuted, maxLines = 1, modifier = Modifier.padding(start = 2.dp, bottom = 2.dp))
-        }
-        Box(Modifier.padding(bottom = 6.dp)) { StatusIcons() }
-        IconButton(Icons.apps, onApps, size = button)
-        Box(Modifier.padding(vertical = 4.dp).width(28.dp).height(1.dp).background(c.line))
-        val voice = remember { voiceIntent(context) }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            // Las favoritas que quepan entre los accesos de arriba y los controles de abajo.
-            val fit = (maxHeight / (button + 4.dp)).toInt()
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (app in favorites.take(fit)) AppShortcut(repo, app, button, icon)
-            }
-        }
-        Volume(if (small) 40.dp else 44.dp, vertical = true)
-        if (voice != null) IconButton(Icons.mic, { runCatching { context.startActivity(voice) } }, size = button)
-        IconButton(Icons.settings, onSettings, size = button)
+        val tint = if (on) c.onPrimary else c.text
+        Icon(icon, tint, 26.dp)
+        Label(label, Typography.small.copy(fontSize = 12.sp), tint, maxLines = 1)
     }
 }
 

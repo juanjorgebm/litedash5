@@ -656,7 +656,7 @@ class TpmsRepository(context: Context, private val bus: VehicleBus) {
 
     private fun startUsb() {
         watchUsb()
-        val manager = context.getSystemService(UsbManager::class.java)
+        val manager = ContextCompat.getSystemService(context, UsbManager::class.java)
         val device = manager?.let(::findUsbDevice)
         if (manager == null || device == null) {
             status = TpmsStatus.NO_DEVICE

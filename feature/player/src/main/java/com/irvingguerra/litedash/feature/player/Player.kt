@@ -351,7 +351,7 @@ object Player {
     }
 
     private fun requestFocus(): Boolean {
-        val audio = app.getSystemService(AudioManager::class.java) ?: return true
+        val audio = ContextCompat.getSystemService(app, AudioManager::class.java) ?: return true
         val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val request = focus ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
@@ -366,7 +366,7 @@ object Player {
     }
 
     private fun abandonFocus() {
-        val audio = app.getSystemService(AudioManager::class.java) ?: return
+        val audio = ContextCompat.getSystemService(app, AudioManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) focus?.let { audio.abandonAudioFocusRequest(it) }
         else @Suppress("DEPRECATION") audio.abandonAudioFocus(focusListener)
     }

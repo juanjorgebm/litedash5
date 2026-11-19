@@ -106,7 +106,8 @@ class BleLink(context: Context, device: BluetoothDevice) : QueuedLink() {
     }
 
     // null si el Bluetooth está apagado.
-    private val gatt: BluetoothGatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
+    private val gatt: BluetoothGatt = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
+        else device.connectGatt(context, false, callback))
         ?: throw IOException("El Bluetooth está apagado")
 
     init {

@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.compose.runtime.mutableStateListOf
+import androidx.core.content.ContextCompat
 
 /** Por qué no se puede escuchar a los tapones Bluetooth (la app lo dice en su idioma). */
 enum class BleProblem { NO_PERMISSION, BLUETOOTH_OFF, LOCATION_OFF, UNSUPPORTED, FAILED }
@@ -60,7 +61,7 @@ class BleTpmsScanner(
     fun permission(): String =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Manifest.permission.BLUETOOTH_SCAN else Manifest.permission.ACCESS_FINE_LOCATION
 
-    fun hasPermission() = context.checkSelfPermission(permission()) == PackageManager.PERMISSION_GRANTED
+    fun hasPermission() = ContextCompat.checkSelfPermission(context, permission()) == PackageManager.PERMISSION_GRANTED
 
     private val callback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) = handle(result)
@@ -81,7 +82,7 @@ class BleTpmsScanner(
     @SuppressLint("MissingPermission") // hasPermission() se revisa antes
     fun start(balanced: Boolean): BleProblem? {
         if (!hasPermission()) return BleProblem.NO_PERMISSION
-        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return BleProblem.UNSUPPORTED
+        val adapter = ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter ?: return BleProblem.UNSUPPORTED
         if (!adapter.isEnabled) return BleProblem.BLUETOOTH_OFF
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && !locationOn()) return BleProblem.LOCATION_OFF
         val le = adapter.bluetoothLeScanner ?: return BleProblem.BLUETOOTH_OFF
@@ -166,7 +167,7 @@ class BleTpmsScanner(
     }
 
     private fun locationOn(): Boolean {
-        val m = context.getSystemService(LocationManager::class.java) ?: return true
+        val m = ContextCompat.getSystemService(context, LocationManager::class.java) ?: return true
         return runCatching {
             m.isProviderEnabled(LocationManager.GPS_PROVIDER) || m.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         }.getOrDefault(true)

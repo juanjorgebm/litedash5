@@ -202,7 +202,7 @@ fun PickGaugePanel(d: Dependencies, tileId: String?, close: () -> Unit) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun <T> ColumnScope.CardGrid(
+internal fun <T> ColumnScope.CardGrid(
     items: List<T>,
     minWidth: Dp,
     height: Dp,
@@ -224,7 +224,7 @@ private fun <T> ColumnScope.CardGrid(
 }
 
 @Composable
-fun AddTilePanel(d: Dependencies, close: () -> Unit, onPickApp: () -> Unit, onPickGauge: () -> Unit) {
+fun AddTilePanel(d: Dependencies, close: () -> Unit, onPickApp: () -> Unit, onPickGauge: () -> Unit, onPickWidget: () -> Unit) {
     val c = LocalColors.current
     var noRoom by remember { mutableStateOf(false) }
     PanelScaffold(stringResource(R.string.add_tile), close) {
@@ -236,6 +236,7 @@ fun AddTilePanel(d: Dependencies, close: () -> Unit, onPickApp: () -> Unit, onPi
         CardGrid(TileSpecs.filter { moduleOff(d, it.type) == null }, minWidth = 180.dp, height = if (isSmallScreen()) 100.dp else 120.dp, onClick = { spec ->
             if (spec.type == TileTypes.APP) onPickApp()
             else if (spec.type == TileTypes.GAUGE) onPickGauge()
+            else if (spec.type == TileTypes.WIDGET) onPickWidget()
             else if (d.dashboard.addTile(spec.type)) close()
             else noRoom = true
         }) { spec ->
@@ -261,5 +262,9 @@ internal fun iconOf(type: String) = when (type) {
     TileTypes.WORKSHOP -> Icons.engine
     TileTypes.PROJECTION -> Icons.phoneCar
     TileTypes.TIRES -> Icons.tire
+    TileTypes.WIFI -> Icons.wifi
+    TileTypes.BLUETOOTH -> Icons.bluetooth
+    TileTypes.FAVORITES -> Icons.phone
+    TileTypes.WIDGET -> Icons.apps
     else -> Icons.apps
 }

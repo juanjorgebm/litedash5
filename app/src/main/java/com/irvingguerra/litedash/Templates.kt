@@ -60,6 +60,7 @@ fun nameOf(p: Template) = when (p) {
     Template.COPILOT -> R.string.template_copilot
     Template.ROUTE -> R.string.template_route
     Template.VERTICAL_MAP -> R.string.template_vertical_map
+    Template.OKAVANGO -> R.string.template_okavango
 }
 
 private fun nameOf(t: ScreenSize) = when (t) {

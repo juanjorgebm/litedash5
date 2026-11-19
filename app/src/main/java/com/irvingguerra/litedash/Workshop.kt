@@ -289,7 +289,7 @@ private fun Connection(d: Dependencies) {
 @Composable
 private fun rememberBluetoothOn(): Boolean? {
     val context = LocalContext.current
-    val adapter = remember { context.getSystemService(BluetoothManager::class.java)?.adapter } ?: return null
+    val adapter = remember { ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter } ?: return null
     var on by remember { mutableStateOf(adapter.isEnabled) }
     LifecycleStartEffect(adapter) {
         on = adapter.isEnabled
@@ -311,7 +311,7 @@ private fun rememberBluetoothOn(): Boolean? {
  */
 @SuppressLint("MissingPermission")
 private fun turnOffBluetooth(context: Context) {
-    val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+    val adapter = ContextCompat.getSystemService(context, BluetoothManager::class.java)?.adapter
     @Suppress("DEPRECATION")
     val done = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && adapter != null && runCatching { adapter.disable() }.getOrDefault(false)
     if (!done) runCatching { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }

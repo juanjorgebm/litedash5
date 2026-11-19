@@ -214,7 +214,7 @@ private enum class RadioTab(val title: Int) { NEARBY(R.string.radio_nearby), FAV
 
 /** Pestaña y búsqueda de la radio: al cerrar y abrir la biblioteca sigue donde estaba. */
 private object RadioBrowserMemory {
-    var tab by mutableStateOf(RadioTab.NEARBY)
+    var tab by mutableStateOf(RadioTab.FAVORITES)
     var query by mutableStateOf("")
 }
 
@@ -235,6 +235,16 @@ private fun RadioBrowser(onPicked: () -> Unit, modifier: Modifier) {
             val fresh = if (here != null) Radio.nearby(context, here) else Radio.country(context)
             if (fresh.isNotEmpty()) { store.setNearbyCache(fresh); fresh } else store.nearbyCache()
         }
+    }
+    // La primera vez, las favoritas vienen llenas con las más escuchadas de Costa Rica.
+    LaunchedEffect(Unit) {
+        if (store.favoritesSeeded) return@LaunchedEffect
+        if (favorites.isNotEmpty()) { store.favoritesSeeded = true; return@LaunchedEffect }
+        val top = withContext(Dispatchers.IO) { Radio.country(context) }.take(SEED_FAVORITES)
+        if (top.isEmpty()) return@LaunchedEffect // sin red: se intenta la próxima vez
+        favorites = top
+        store.setFavorites(top)
+        store.favoritesSeeded = true
     }
     val found by produceState<List<Station>?>(null, query) {
         value = null

@@ -1,5 +1,6 @@
 package com.irvingguerra.litedash.feature.player
 
+import com.irvingguerra.litedash.core.ui.MyCar
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -7,6 +8,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import android.security.NetworkSecurityPolicy
 import com.irvingguerra.litedash.core.ui.Https
 import org.json.JSONArray
@@ -14,7 +16,7 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URLEncoder
-import java.util.Locale
+import androidx.core.content.ContextCompat
 
 /** Una estación de radio por internet (de la base abierta Radio Browser). */
 class Station(
@@ -86,14 +88,16 @@ object Radio {
     /** La última ubicación que tenga Android (GPS o red), si LiteDash tiene permiso; sin pedir nada. */
     @SuppressLint("MissingPermission") // se revisa justo antes
     fun here(context: Context): Here? {
-        val fine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) return null
-        val manager = context.getSystemService(LocationManager::class.java) ?: return null
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        // Sin permiso o sin ubicación: Palmares, Alajuela ([MyCar]).
+        val home = Here(kotlin.math.round(MyCar.LATITUDE * 10) / 10, kotlin.math.round(MyCar.LONGITUDE * 10) / 10)
+        if (!fine && !coarse) return home
+        val manager = ContextCompat.getSystemService(context, LocationManager::class.java) ?: return home
         return runCatching {
             manager.allProviders.mapNotNull { manager.getLastKnownLocation(it) }.maxByOrNull { it.time }
         // Redondeada a 0.1° (~10 km): para estaciones a 120 km sobra, y no se manda la ubicación exacta.
-        }.getOrNull()?.let { Here(kotlin.math.round(it.latitude * 10) / 10, kotlin.math.round(it.longitude * 10) / 10) }
+        }.getOrNull()?.let { Here(kotlin.math.round(it.latitude * 10) / 10, kotlin.math.round(it.longitude * 10) / 10) } ?: home
     }
 
     /** Estaciones a menos de [NEARBY_METERS] de [here], las más cercanas primero. */
@@ -102,7 +106,7 @@ object Radio {
             .sortedBy { it.distanceKm(here.latitude, here.longitude) ?: Double.MAX_VALUE }
 
     /** Las más escuchadas del país de la pantalla (cuando no hay ubicación). */
-    fun country(context: Context, code: String = Locale.getDefault().country): List<Station> =
+    fun country(context: Context, code: String = MyCar.COUNTRY): List<Station> =
         search(context, "countrycode=${encode(code)}&order=clickcount&reverse=true")
 
     /** Por nombre, en todo el mundo. */
@@ -157,7 +161,8 @@ object Radio {
         val out = ArrayList<Station>(array.length())
         val seen = HashSet<String>()
         // Si Android no deja tráfico sin cifrar (lo normal desde la 9), las http:// no sonarían: no se listan.
-        val cleartext = NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted
+        // Android 5 no tiene esa política: ahí siempre se permite.
+        val cleartext = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted
         for (i in 0 until array.length()) {
             val o = array.optJSONObject(i) ?: continue
             val url = o.optString("url_resolved").ifBlank { o.optString("url") }.ifBlank { continue }

@@ -88,6 +88,10 @@ val TileSpecs = listOf(
     TileSpec(TileTypes.PROJECTION, R.string.tile_projection, SizeLimits(2, 1), 3 to 1, R.string.tile_projection_help),
     TileSpec(TileTypes.TIRES, R.string.tile_tires, SizeLimits(1, 1), 2 to 2, R.string.tile_tires_help),
     TileSpec(TileTypes.APP, R.string.tile_app, SizeLimits(1, 1), 1 to 1),
+    TileSpec(TileTypes.WIFI, R.string.tile_wifi, SizeLimits(1, 1), 2 to 1, R.string.tile_wifi_help),
+    TileSpec(TileTypes.BLUETOOTH, R.string.tile_bluetooth, SizeLimits(1, 1), 2 to 1, R.string.tile_bluetooth_help),
+    TileSpec(TileTypes.FAVORITES, R.string.tile_favorites, SizeLimits(2, 2), 3 to 3, R.string.tile_favorites_help),
+    TileSpec(TileTypes.WIDGET, R.string.tile_widget, SizeLimits(2, 1), 3 to 2, R.string.tile_widget_help),
 )
 
 fun limitsOf(type: String) = TileSpecs.firstOrNull { it.type == type }?.limits ?: SizeLimits(1, 1)
@@ -99,7 +103,7 @@ val NAVIGATION_PACKAGES = arrayOf(
 
 // Apps de música que se sugieren en el dock si no eligió una (Spotify primero).
 val MUSIC_PACKAGES = arrayOf(
-    "com.spotify.music", "com.google.android.apps.youtube.music", "deezer.android.app",
+    "com.neusoft.shockwave.Mutimedia", "com.spotify.music", "com.google.android.apps.youtube.music", "deezer.android.app",
     "com.apple.android.music", "com.amazon.mp3",
 )
 
@@ -382,9 +386,22 @@ internal fun Turn(instruction: TurnInstruction, large: Boolean) {
     }
 }
 
+/** Teléfono Bluetooth de fábrica de la pantalla del Okavango (ECARX): el marcador de Android no existe ahí. */
+private const val CAR_PHONE_APP = "bt.ecarxtestn.com.btphoneapp"
+
 fun openDialer(context: Context) {
-    val intent = Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { context.startActivity(intent) }
+    val pm = context.packageManager
+    // Primero la app "Teléfono" del carro; si no, la que se llame así entre las apps del sistema; al final, el marcador.
+    val launch = pm.getLaunchIntentForPackage(CAR_PHONE_APP)
+        ?: runCatching {
+            pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                .firstOrNull { it.loadLabel(pm).toString().trim().lowercase() in setOf("teléfono", "telefono", "phone") && it.activityInfo.packageName != context.packageName }
+                ?.let { pm.getLaunchIntentForPackage(it.activityInfo.packageName) }
+        }.getOrNull()
+    val intent = (launch ?: Intent(Intent.ACTION_DIAL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }.onFailure {
+        runCatching { context.startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
 }
 
 /** Navegación directa a [address]: Waze o Maps si son la app elegida; si no, la que atienda "geo:". */

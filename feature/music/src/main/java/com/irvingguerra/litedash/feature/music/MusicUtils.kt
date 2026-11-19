@@ -9,13 +9,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.delay
+import androidx.core.content.ContextCompat
 
 /**
  * Una tecla multimedia (abajo y arriba) como la del volante: a [receiver] (el receptor de una
  * app) o, sin él, al sistema de audio, que la lleva a la app de música que toca.
  */
 fun sendMediaKey(context: Context, code: Int, receiver: ComponentName? = null) {
-    val audio = context.getSystemService(AudioManager::class.java)
+    val audio = ContextCompat.getSystemService(context, AudioManager::class.java)!!
     for (action in intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
         val event = KeyEvent(action, code)
         runCatching {
